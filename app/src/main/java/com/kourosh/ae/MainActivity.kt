@@ -7740,9 +7740,14 @@ class MainActivity : Activity() {
     )
 
     /** The Bypass Iran toggle. Reads the same key the TUN builder excludes by. */
-    private fun iranBypassEnabled(): Boolean = preferences().getBoolean(
-        KouroshAeVpnService.IRAN_BYPASS_PREF, false,
-    )
+    private fun iranBypassEnabled(): Boolean {
+        val prefs = preferences()
+        if (!prefs.contains(KouroshAeVpnService.IRAN_BYPASS_PREF)) {
+            prefs.edit().putBoolean(KouroshAeVpnService.IRAN_BYPASS_PREF, true).apply()
+            return true
+        }
+        return prefs.getBoolean(KouroshAeVpnService.IRAN_BYPASS_PREF, true)
+    }
 
     private fun savedProtocol(): Protocol {
         val name = preferences().getString(DEFAULT_PROTOCOL, Protocol.WIREGUARD.coreName)

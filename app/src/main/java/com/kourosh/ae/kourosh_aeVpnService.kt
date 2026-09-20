@@ -5600,8 +5600,18 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
         return prefs.getBoolean(LAN_BYPASS_PREF, false)
     }
 
-    /** "Bypass Iran" toggle. Profiled: a routing choice is per-profile settings. */
-    private fun iranBypassEnabled(): Boolean = profiled().getBoolean(IRAN_BYPASS_PREF, false)
+    /**
+     * "Bypass Iran" toggle. New installs default to the requested local-route
+     * behaviour; an explicit user choice is always preserved across upgrades.
+     */
+    private fun iranBypassEnabled(): Boolean {
+        val prefs = profiled()
+        if (!prefs.contains(IRAN_BYPASS_PREF)) {
+            prefs.edit().putBoolean(IRAN_BYPASS_PREF, true).apply()
+            return true
+        }
+        return prefs.getBoolean(IRAN_BYPASS_PREF, true)
+    }
 
     /**
      * "Bypass Iran" — send Iranian destinations around the tunnel entirely.
