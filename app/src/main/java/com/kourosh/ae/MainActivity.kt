@@ -4542,7 +4542,7 @@ class MainActivity : Activity() {
         val sheet = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(24), dp(24), dp(24))
-            background = roundedBackground(SURFACE, 28, PRIMARY)
+            background = roundedBackground(SURFACE, 28, PRIMARY_TEXT)
         }
         sheet.addView(label("KOUROSH-AE", 22f, PRIMARY_TEXT, TypefaceStyle.MEDIUM))
         sheet.addView(
