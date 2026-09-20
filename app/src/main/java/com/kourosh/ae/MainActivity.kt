@@ -912,21 +912,25 @@ class MainActivity : Activity() {
             .alpha(1f)
             .scaleX(1f)
             .scaleY(1f)
-            .setDuration(220)
+            .setDuration(140)
             .setInterpolator(PathInterpolator(0.2f, 0f, 0f, 1f))
             .withEndAction {
                 lockup.animate()
                     .scaleX(1.05f)
                     .scaleY(1.05f)
-                        .setDuration(300)
+                    .setDuration(120)
                     .setInterpolator(PathInterpolator(0.4f, 0f, 0.2f, 1f))
                     .withEndAction {
                         overlay.animate()
                             .alpha(0f)
-                            .setDuration(160)
+                            .setDuration(120)
                             .withEndAction {
                                 pageHost.removeView(overlay)
-                                orbitDial.requestFocus()
+                                // The Pro Home uses the horizontal action instead of
+                                // attaching the legacy dial. Focusing a detached dial
+                                // here caused the entry transition to be unreliable.
+                                pageHost.isFocusableInTouchMode = true
+                                pageHost.requestFocus()
                             }
                             .start()
                     }
@@ -1476,7 +1480,7 @@ class MainActivity : Activity() {
         val brand = label("KOUROSH AE", 13f, primary, TypefaceStyle.MEDIUM).apply {
             gravity = Gravity.CENTER
             letterSpacing = spacing(0.28f)
-            setShadowLayer(dp(9), 0f, 0f, Sculpt.withAlpha(primary, 0.75f))
+            setShadowLayer(dp(9).toFloat(), 0f, 0f, Sculpt.withAlpha(primary, 0.75f))
         }
         hero.addView(brand, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
