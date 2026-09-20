@@ -50,9 +50,9 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@drawable/kourosh_ae_logo"
+        android:icon="@mipmap/ic_launcher"
         android:label="Kourosh-AE"
-        android:roundIcon="@drawable/kourosh_ae_logo"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.KouroshAe">
         <activity
             android:name=".MainActivity"

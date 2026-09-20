@@ -1,5 +1,5 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/kourosh_ae_logo" />
+    <background android:drawable="@android:color/black" />
     <foreground android:drawable="@drawable/kourosh_ae_logo" />
     <monochrome android:drawable="@drawable/kourosh_ae_monochrome" />
 </adaptive-icon>
