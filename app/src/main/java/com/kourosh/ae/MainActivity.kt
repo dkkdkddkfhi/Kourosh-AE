@@ -222,6 +222,7 @@ class MainActivity : Activity() {
     private var chainOuterRow: OrbitSettingsRow? = null
     private var torChainOuterRow: OrbitSettingsRow? = null
     private var egressRegionRow: OrbitSettingsRow? = null
+    private var homePsiphonCountryRow: OrbitSettingsRow? = null
 
     /** LAN-sharing switch; its subtitle carries the live proxy address. */
     private var lanSharingRow: OrbitToggleRow? = null
@@ -745,6 +746,11 @@ class MainActivity : Activity() {
             RemotePolicy.refreshIfDue(this)
             SmartSplitSub.refreshIfDue(this)
         }
+        pageHost.postDelayed({
+            if (!isFinishing && !isDestroyed && AppLanguage.hasChosen(this)) {
+                appUpdater.checkForOptionalUpdate()
+            }
+        }, 1200L)
     }
 
     override fun onStart() {
@@ -1608,6 +1614,15 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             transportRailHeight,
         ).apply { topMargin = dp(10) })
+        homePsiphonCountryRow = navRow(Strings.t("Psiphon country"), egressRegionLabel()) {
+            chooseEgressRegion { homePsiphonCountryRow?.setValue(egressRegionLabel()) }
+        }.also { row ->
+            row.visibility = if (selectedProtocol == Protocol.PSIPHON) View.VISIBLE else View.GONE
+        }
+        addView(homePsiphonCountryRow!!, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(8) })
         addView(chainCard, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             dp(56),
@@ -5488,6 +5503,11 @@ class MainActivity : Activity() {
         egressRegionRow?.apply {
             setValue(egressRegionLabel())
             setAvailable(chainAvailable)
+        }
+        homePsiphonCountryRow?.apply {
+            setValue(egressRegionLabel())
+            visibility = if (psiphonSelected) View.VISIBLE else View.GONE
+            setAvailable(psiphonSelected && modeControlsEnabled)
         }
         // LAN sharing is no longer Psiphon-only: MASQUE/WireGuard/WoW publish a real
         // SOCKS5 listener in SOCKS tunnel type, and Tor publishes its own SocksPort

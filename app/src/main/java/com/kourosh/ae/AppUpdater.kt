@@ -73,6 +73,26 @@ class AppUpdater(private val activity: Activity) {
     }
 
     /**
+     * Silent launch check: only interrupts the user when a newer release exists.
+     * Network errors and an up-to-date result are intentionally invisible so an
+     * update can never block entry into the VPN screen.
+     */
+    fun checkForOptionalUpdate() {
+        if (busy) return
+        busy = true
+        worker.execute {
+            val result = runCatching(::latestRelease).getOrNull()
+            activity.runOnUiThread {
+                busy = false
+                if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                if (result != null && isNewer(result.version, appVersion())) {
+                    announceUpdate(result)
+                }
+            }
+        }
+    }
+
+    /**
      * The new-version notice.
      *
      * Deliberately says the download opens in the browser. A user who taps
