@@ -70,6 +70,7 @@ class MainActivity : Activity() {
     private lateinit var connectionDetail: TextView
     private lateinit var chipLatency: TextView
     private lateinit var chipProtocol: TextView
+    private var homeLiveSpeed: TextView? = null
     private lateinit var tileDown: MetricTile
     private lateinit var tileUp: MetricTile
     private lateinit var tileSpeed: MetricTile
@@ -1472,7 +1473,7 @@ class MainActivity : Activity() {
         val hero = FrameLayout(this@MainActivity).apply {
             background = Sculpt.sculptedBackground(
                 resources.displayMetrics.density,
-                Color.TRANSPARENT,
+                Color.BLACK,
                 30,
                 accent = Sculpt.withAlpha(primary, 0.18f),
             )
@@ -1493,7 +1494,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             isClickable = true
             isFocusable = true
-            setPadding(dp(16), 0, dp(16), 0)
+            setPadding(dp(20), 0, dp(20), 0)
             setOnClickListener { toggleTunnel() }
         }
         val connectDot = View(this@MainActivity).apply {
@@ -1512,11 +1513,11 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
         }
         connectionTitle.gravity = Gravity.CENTER
-        connectionTitle.textSize = 17f
+        connectionTitle.textSize = 20f
         connectionTitle.setTextColor(INK)
         connectionTitle.letterSpacing = spacing(0.07f)
         connectionDetail.gravity = Gravity.CENTER
-        connectionDetail.textSize = 9f
+        connectionDetail.textSize = 10f
         connectionDetail.setTextColor(MUTED)
         connectionDetail.letterSpacing = spacing(0.12f)
         buttonText.addView(connectionTitle, LinearLayout.LayoutParams(
@@ -1546,7 +1547,7 @@ class MainActivity : Activity() {
         }
         hero.addView(connectFrame, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(64),
+            dp(92),
             Gravity.BOTTOM,
         ).apply { leftMargin = dp(16); rightMargin = dp(16); bottomMargin = dp(16) })
         addView(hero, LinearLayout.LayoutParams(
@@ -1561,6 +1562,33 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = dp(14); bottomMargin = dp(10) })
+
+        val liveInfo = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = Sculpt.sculptedBackground(
+                resources.displayMetrics.density,
+                Color.BLACK,
+                18,
+                accent = Sculpt.withAlpha(primary, 0.24f),
+            )
+        }
+        chipLatency.text = Strings.t("PING —")
+        chipLatency.textSize = 11f
+        chipLatency.setTextColor(MUTED)
+        chipLatency.gravity = Gravity.CENTER
+        chipLatency.letterSpacing = spacing(0.08f)
+        liveInfo.addView(chipLatency, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        homeLiveSpeed = label("↓ 0 B/S   ↑ 0 B/S", 11f, MUTED, TypefaceStyle.MEDIUM).apply {
+            gravity = Gravity.CENTER
+            letterSpacing = spacing(0.05f)
+        }
+        liveInfo.addView(homeLiveSpeed, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        addView(liveInfo, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(10); bottomMargin = dp(10) })
 
         val tiles = LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -6942,7 +6970,9 @@ class MainActivity : Activity() {
                 Strings.tf(" (%s of %s)", autoScanIndex + 1, AUTO_SCAN_LADDER.size)
         } else {
             connectionTitle.text = title
-            connectionDetail.text = detail
+            connectionDetail.text = if (orbitDial.progressPercent in 0..100) {
+                "$detail · ${orbitDial.progressPercent}%"
+            } else detail
         }
         footerWave.setLit(false)
         setModeEnabled(false)
@@ -7115,6 +7145,7 @@ class MainActivity : Activity() {
         val combined = trafficSpeedRx + trafficSpeedTx
         val (speedValue, speedUnit) = scaleSpeed(combined)
         tileSpeed.setValue(speedValue, speedUnit)
+        homeLiveSpeed?.text = "↓ ${formatTraffic(trafficSpeedRx)}/s   ↑ ${formatTraffic(trafficSpeedTx)}/s"
         // Bars are relative to a 512 KB/s ceiling — a realistic mobile-tunnel
         // full scale. The old 4 MB/s ceiling squashed every real sample into the
         // bottom 5% of the sparkline, so the bars never visibly moved.
