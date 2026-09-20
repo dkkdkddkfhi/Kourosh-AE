@@ -28,8 +28,8 @@ android {
         applicationId = "com.kourosh.ae"
         minSdk = 26
         targetSdk = 36
-        versionCode = 218
-        versionName = "2.1.8"
+        versionCode = 219
+        versionName = "2.1.9"
 
     }
 
