@@ -669,7 +669,7 @@ class MainActivity : Activity() {
             }
         }
         val header = createHeader()
-        val console = createConnectionConsole()
+        val console = createProHomeConsole()
         mainRoot.addView(KouroshSceneView(this), FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1450,6 +1450,148 @@ class MainActivity : Activity() {
                 orbitDial.post { orbitDial.sizeScale = target }
             }
         }
+    }
+
+    /**
+     * Native recreation of the ZIP reference: a live hero, one horizontal connect
+     * action, then the compact metrics/IP/protocol stack. The old circular dial is
+     * intentionally not placed here; its state is still kept for compatibility with
+     * the existing status renderer, while this button is the user-facing action.
+     */
+    private fun createProHomeConsole(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER_HORIZONTAL
+        setPadding(dp(20), 0, dp(20), dp(20))
+        clipChildren = false
+        clipToPadding = false
+
+        val hero = FrameLayout(this@MainActivity).apply {
+            background = Sculpt.sculptedBackground(
+                resources.displayMetrics.density,
+                Color.TRANSPARENT,
+                30,
+                accent = Sculpt.withAlpha(primary, 0.18f),
+            )
+        }
+        val brand = label("KOUROSH AE", 13f, primary, TypefaceStyle.MEDIUM).apply {
+            gravity = Gravity.CENTER
+            letterSpacing = spacing(0.28f)
+            setShadowLayer(dp(9), 0f, 0f, Sculpt.withAlpha(primary, 0.75f))
+        }
+        hero.addView(brand, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP,
+        ).apply { topMargin = dp(16) })
+
+        val connectButton = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = true
+            setPadding(dp(16), 0, dp(16), 0)
+            setOnClickListener { toggleTunnel() }
+        }
+        val connectDot = View(this@MainActivity).apply {
+            background = Sculpt.sculptedBackground(
+                resources.displayMetrics.density,
+                Sculpt.withAlpha(MUTED, 0.8f),
+                999,
+                accent = Sculpt.withAlpha(primary, 0.45f),
+            )
+        }
+        connectButton.addView(connectDot, LinearLayout.LayoutParams(dp(8), dp(8)).apply {
+            rightMargin = dp(12)
+        })
+        val buttonText = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+        }
+        connectionTitle.gravity = Gravity.CENTER
+        connectionTitle.textSize = 17f
+        connectionTitle.setTextColor(INK)
+        connectionTitle.letterSpacing = spacing(0.07f)
+        connectionDetail.gravity = Gravity.CENTER
+        connectionDetail.textSize = 9f
+        connectionDetail.setTextColor(MUTED)
+        connectionDetail.letterSpacing = spacing(0.12f)
+        buttonText.addView(connectionTitle, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        buttonText.addView(connectionDetail, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(3) })
+        connectButton.addView(buttonText, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        val connectFrame = FrameLayout(this@MainActivity).apply {
+            background = Sculpt.sculptedRipple(
+                resources.displayMetrics.density,
+                Sculpt.blend(palette.surface, palette.primary, 0.10f),
+                20,
+                primary,
+                accent = Sculpt.withAlpha(primary, 0.68f),
+            )
+            addView(connectButton, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+        }
+        hero.addView(connectFrame, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(64),
+            Gravity.BOTTOM,
+        ).apply { leftMargin = dp(16); rightMargin = dp(16); bottomMargin = dp(16) })
+        addView(hero, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(300),
+        ).apply { leftMargin = -dp(20); rightMargin = -dp(20) })
+
+        addView(label("PRIVATE NETWORK", 11f, primary, TypefaceStyle.MEDIUM).apply {
+            gravity = Gravity.CENTER
+            letterSpacing = spacing(0.30f)
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(14); bottomMargin = dp(10) })
+
+        val tiles = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(tileDown, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
+            addView(tileUp, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
+            addView(tileSpeed, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        addView(tiles, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        addView(exitNodeCard, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(14) })
+        addView(transportRail, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            transportRailHeight,
+        ).apply { topMargin = dp(10) })
+        addView(chainCard, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(56),
+        ).apply { topMargin = dp(10) })
+        addView(smartSplitCard, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(56),
+        ).apply { topMargin = dp(10) })
+        addView(mimCard, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(56),
+        ).apply { topMargin = dp(10) })
+        addView(footerWave, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(36),
+        ).apply { topMargin = dp(10) })
     }
 
     private fun createConnectionConsole(): LinearLayout = LinearLayout(this).apply {
