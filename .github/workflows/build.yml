@@ -1,11 +1,11 @@
-name: Kourosh-AE Android Build
+name: Kourosh-AE Android Release
 on:
   workflow_dispatch:
 permissions:
   contents: write
 jobs:
   build:
-    name: Build Kourosh-AE signed release APKs
+    name: Build Kourosh-AE signed APK and Play AAB
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Kourosh-AE
@@ -31,45 +31,46 @@ jobs:
         env:
           KOUROSH_AE_KEYSTORE_B64: ${{ secrets.KOUROSH_AE_KEYSTORE_B64 }}
         run: |
-          test -n "$KOUROSH_AE_KEYSTORE_B64" || { echo 'Missing KOUROSH_AE_KEYSTORE_B64 repository secret'; exit 1; }
+          test -n "$KOUROSH_AE_KEYSTORE_B64" || { echo 'Missing KOUROSH_AE_KEYSTORE_B64'; exit 1; }
           echo "$KOUROSH_AE_KEYSTORE_B64" | base64 --decode > release.keystore
           test -s release.keystore
       - name: Make Gradle executable
         run: chmod +x gradlew
-      - name: Build signed release APKs
+      - name: Build signed APKs and Play AAB
         env:
           KOUROSH_AE_KEYSTORE_PASSWORD: ${{ secrets.KOUROSH_AE_KEYSTORE_PASSWORD }}
           KOUROSH_AE_KEY_ALIAS: ${{ secrets.KOUROSH_AE_KEY_ALIAS }}
           KOUROSH_AE_KEY_PASSWORD: ${{ secrets.KOUROSH_AE_KEY_PASSWORD }}
         run: |
-          test -n "$KOUROSH_AE_KEYSTORE_PASSWORD" || { echo 'Missing KOUROSH_AE_KEYSTORE_PASSWORD repository secret'; exit 1; }
-          test -n "$KOUROSH_AE_KEY_ALIAS" || { echo 'Missing KOUROSH_AE_KEY_ALIAS repository secret'; exit 1; }
-          test -n "$KOUROSH_AE_KEY_PASSWORD" || { echo 'Missing KOUROSH_AE_KEY_PASSWORD repository secret'; exit 1; }
-          ./gradlew assembleRelease -PkouroshAeKeystore=release.keystore --no-daemon
-      - name: Verify APKs are release-signed
+          test -n "$KOUROSH_AE_KEYSTORE_PASSWORD" || { echo 'Missing KOUROSH_AE_KEYSTORE_PASSWORD'; exit 1; }
+          test -n "$KOUROSH_AE_KEY_ALIAS" || { echo 'Missing KOUROSH_AE_KEY_ALIAS'; exit 1; }
+          test -n "$KOUROSH_AE_KEY_PASSWORD" || { echo 'Missing KOUROSH_AE_KEY_PASSWORD'; exit 1; }
+          ./gradlew assembleRelease bundleRelease -PkouroshAeKeystore=release.keystore --no-daemon
+      - name: Verify signed APKs
         run: |
-          test -n "$(find app/build/outputs/apk/release -name '*.apk' -print -quit)"
           for apk in app/build/outputs/apk/release/*.apk; do
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk" | grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true'
             echo "Verified release APK: $apk"
           done
-      - name: Upload signed Kourosh-AE APKs
+      - name: Upload signed APK and Play AAB artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Kourosh-AE-release-apks
-          path: app/build/outputs/apk/release/*.apk
+          name: Kourosh-AE-v2.1.10-release
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
           retention-days: 30
       - name: Create or reuse GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v2.1.9 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
-            gh release create v2.1.9 --repo "${{ github.repository }}" --target "${{ github.sha }}" \
-              --title 'Kourosh-AE v2.1.9' --notes 'Signed release APK. Compatible update path requires the same configured keystore.'
-      - name: Publish signed APKs to GitHub Release
+          gh release view v2.1.10 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create v2.1.10 --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+              --title 'Kourosh-AE v2.1.10' --notes 'Signed APK and Play Store AAB. The AAB is ready for Google Play Console upload.'
+      - name: Publish signed APK and AAB to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload v2.1.9 app/build/outputs/apk/release/*.apk \
+          gh release upload v2.1.10 app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab \
             --repo "${{ github.repository }}" --clobber
