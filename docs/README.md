@@ -1,6 +1,7 @@
 # مستندات Kourosh-AE
 
 - [معماری](architecture.md) — مرزهای لایهٔ اندروید، پل JNI و هستهٔ Rust.
+- [متدهای اتصال](protocols.md) — پیاده‌سازی MASQUE، MASQUE over MASQUE، SHARD، edge fan-out، health ranking و Smart Split.
 - [راهنمای ساخت](build.md) — ساخت محلی APK دیباگ برای معماری‌های پشتیبانی‌شده.
 
 معرفی پروژه و لینک دانلود و قواعد مشارکت و گزارش امنیتی در [README اصلی](../README.md) آمده است.
