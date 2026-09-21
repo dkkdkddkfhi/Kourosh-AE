@@ -15,6 +15,11 @@ class KouroshSceneView @JvmOverloads constructor(
     private val bg = Paint(Paint.ANTI_ALIAS_FLAG)
     private val gold = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(1f) }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    // Reused on every frame. Creating Paint/Path objects inside onDraw caused
+    // avoidable GC pressure while the live scene was animating at 30 fps.
+    private val aurora = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val ribbon = Path()
+    private val shield = Path()
     private val particles = Array(36) { PointF(Random.nextFloat(), Random.nextFloat()) }
     private var phase = 0f
     private var running = false
@@ -37,12 +42,11 @@ class KouroshSceneView @JvmOverloads constructor(
         c.drawRect(0f, 0f, w, h, bg); bg.shader = null
         val cx = w * .58f; val cy = h * .34f
         // Slow aurora ribbons add depth without a bitmap or a static scene.
-        val aurora = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp(18f) }
+        aurora.strokeWidth = dp(18f)
         aurora.color = Color.argb(32, 34, 211, 197)
-        val ribbon = Path().apply {
-            moveTo(-dp(30f), h * .28f)
-            cubicTo(w * .22f, h * (.20f + .03f * sin(phase)), w * .48f, h * (.42f + .02f * sin(phase + 1f)), w + dp(30f), h * .27f)
-        }
+        ribbon.rewind()
+        ribbon.moveTo(-dp(30f), h * .28f)
+        ribbon.cubicTo(w * .22f, h * (.20f + .03f * sin(phase)), w * .48f, h * (.42f + .02f * sin(phase + 1f)), w + dp(30f), h * .27f)
         c.drawPath(ribbon, aurora)
         aurora.color = Color.argb(22, 124, 245, 228)
         aurora.strokeWidth = dp(9f)
@@ -80,7 +84,8 @@ class KouroshSceneView @JvmOverloads constructor(
         c.drawLine(px - dp(26f), py + dp(28f), px - dp(62f), py + dp(98f), gold)
         c.drawLine(px + dp(10f), py + dp(24f), px + dp(58f), py + dp(98f), gold)
         // Minimal shield emblem in the center.
-        val shield = Path().apply { moveTo(cx, cy - dp(54f)); lineTo(cx + dp(42f), cy - dp(34f)); lineTo(cx + dp(34f), cy + dp(34f)); lineTo(cx, cy + dp(58f)); lineTo(cx - dp(34f), cy + dp(34f)); lineTo(cx - dp(42f), cy - dp(34f)); close() }
+        shield.rewind()
+        shield.moveTo(cx, cy - dp(54f)); shield.lineTo(cx + dp(42f), cy - dp(34f)); shield.lineTo(cx + dp(34f), cy + dp(34f)); shield.lineTo(cx, cy + dp(58f)); shield.lineTo(cx - dp(34f), cy + dp(34f)); shield.lineTo(cx - dp(42f), cy - dp(34f)); shield.close()
         fill.color = Color.argb(180, 8, 7, 5); c.drawPath(shield, fill)
         gold.strokeWidth = dp(2f); c.drawPath(shield, gold)
         // Abstract Persepolis columns and mountain horizon.
