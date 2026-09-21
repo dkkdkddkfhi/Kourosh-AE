@@ -34,7 +34,7 @@ class ProConnectShieldView(
     private val shield = Path()
 
     init {
-        isImportantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
         contentDescription = "اتصال"
     }
 
