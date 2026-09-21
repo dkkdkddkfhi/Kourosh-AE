@@ -55,7 +55,7 @@ jobs:
       - name: Upload signed APK and Play AAB artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Kourosh-AE-v2.1.11-release
+          name: Kourosh-AE-v2.1.12-release
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
@@ -65,12 +65,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v2.1.11 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
-            gh release create v2.1.11 --repo "${{ github.repository }}" --target "${{ github.sha }}" \
-              --title 'Kourosh-AE v2.1.11' --notes 'Signed APK and Play Store AAB. The AAB is ready for Google Play Console upload.'
+          gh release view v2.1.12 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create v2.1.12 --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+              --title 'Kourosh-AE v2.1.12' --notes 'Reference-matched Iranian automotive UI with signed APK and Play Store AAB.'
       - name: Publish signed APK and AAB to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload v2.1.11 app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab \
+          gh release upload v2.1.12 app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab \
             --repo "${{ github.repository }}" --clobber

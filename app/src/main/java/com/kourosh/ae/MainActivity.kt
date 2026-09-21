@@ -673,7 +673,12 @@ class MainActivity : Activity() {
         }
         val header = createHeader()
         val console = createProHomeConsole()
-        mainRoot.addView(KouroshSceneView(this), FrameLayout.LayoutParams(
+        mainRoot.addView(ImageView(this).apply {
+            setImageResource(R.drawable.kourosh_palace_cars_bg)
+            scaleType = ScaleType.CENTER_CROP
+            alpha = 0.28f
+            contentDescription = null
+        }, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         ))
@@ -870,11 +875,21 @@ class MainActivity : Activity() {
             setBackgroundColor(CANVAS)
             isClickable = true
         }
-        // Keep launch artwork native: the old image-only splash made the first
-        // screen look unchanged even after the Home scene had been rebuilt.
-        // KouroshSceneView supplies the animated heritage background immediately,
-        // while the brand lockup gives the user a clear, fast entry state.
-        overlay.addView(KouroshSceneView(this), FrameLayout.LayoutParams(
+        overlay.addView(ImageView(this).apply {
+            setImageResource(R.drawable.kourosh_palace_cars_bg)
+            scaleType = ScaleType.CENTER_CROP
+            alpha = 0.92f
+            contentDescription = null
+        }, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        overlay.addView(View(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.argb(180, 2, 5, 8), Color.argb(220, 2, 5, 8)),
+            )
+        }, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         ))
@@ -1328,10 +1343,13 @@ class MainActivity : Activity() {
 
     private fun createHeader(): LinearLayout = LinearLayout(this).apply {
         gravity = Gravity.CENTER_VERTICAL
-        // No mark in the header. The brand lives on the launcher icon and the
-        // opening splash; repeating it above a single connect button was upstream
-        // furniture, not information. What belongs here is live state: a small
-        // LED that mirrors the dial, plus the settings entry.
+        addView(label("☰", 28f, primary, TypefaceStyle.MEDIUM).apply {
+            contentDescription = "منوی برنامه"
+            isClickable = true
+            isFocusable = true
+            setPadding(0, 0, dp(10), 0)
+            setOnClickListener { openSettingsScreen() }
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
         addView(label("♛", 18f, primary, TypefaceStyle.MEDIUM).apply {
             setPadding(0, 0, dp(6), 0)
             contentDescription = "Kourosh-AE"
@@ -1483,9 +1501,32 @@ class MainActivity : Activity() {
                 resources.displayMetrics.density,
                 Color.BLACK,
                 30,
-                accent = Sculpt.withAlpha(primary, 0.18f),
+                accent = Sculpt.withAlpha(primary, 0.30f),
             )
+            clipChildren = false
         }
+        hero.addView(ImageView(this@MainActivity).apply {
+            setImageResource(R.drawable.kourosh_palace_cars_bg)
+            scaleType = ScaleType.CENTER_CROP
+            alpha = 0.84f
+            contentDescription = null
+        }, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        hero.addView(View(this@MainActivity).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(
+                    Color.argb(180, 2, 5, 8),
+                    Color.argb(35, 2, 5, 8),
+                    Color.argb(210, 2, 5, 8),
+                ),
+            )
+        }, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
         val brand = label("KOUROSH AE", 13f, primary, TypefaceStyle.MEDIUM).apply {
             gravity = Gravity.CENTER
             letterSpacing = spacing(0.28f)
@@ -1497,69 +1538,50 @@ class MainActivity : Activity() {
             Gravity.TOP,
         ).apply { topMargin = dp(16) })
 
-        val connectButton = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            isClickable = true
-            isFocusable = true
-            setPadding(dp(20), 0, dp(20), 0)
-            setOnClickListener { toggleTunnel() }
-        }
-        val shield = ProConnectShieldView(this@MainActivity, palette).apply {
-            state = visualState
-        }
-        proConnectShield = shield
-        connectButton.addView(shield, LinearLayout.LayoutParams(dp(34), dp(34)).apply {
-            rightMargin = dp(12)
-        })
-        val buttonText = LinearLayout(this@MainActivity).apply {
+        orbitDial.sizeScale = 1f
+        hero.addView(orbitDial, FrameLayout.LayoutParams(
+            dp(250),
+            dp(250),
+            Gravity.CENTER,
+        ).apply { topMargin = dp(4) })
+        val statusBlock = LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
+            setPadding(dp(12), dp(5), dp(12), dp(5))
+            background = Sculpt.sculptedBackground(
+                resources.displayMetrics.density,
+                Color.argb(170, 3, 7, 10),
+                16,
+                accent = Sculpt.withAlpha(primary, 0.40f),
+            )
         }
         connectionTitle.gravity = Gravity.CENTER
-        connectionTitle.textSize = 20f
+        connectionTitle.textSize = 17f
         connectionTitle.setTextColor(INK)
         connectionTitle.letterSpacing = spacing(0.07f)
         connectionDetail.gravity = Gravity.CENTER
         connectionDetail.textSize = 10f
         connectionDetail.setTextColor(MUTED)
-        connectionDetail.letterSpacing = spacing(0.12f)
-        buttonText.addView(connectionTitle, LinearLayout.LayoutParams(
+        connectionDetail.letterSpacing = spacing(0.10f)
+        statusBlock.addView(connectionTitle, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ))
-        buttonText.addView(connectionDetail, LinearLayout.LayoutParams(
+        statusBlock.addView(connectionDetail, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(3) })
-        connectButton.addView(buttonText, LinearLayout.LayoutParams(
+        ).apply { topMargin = dp(2) })
+        hero.addView(statusBlock, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
-        ))
-        val connectFrame = FrameLayout(this@MainActivity).apply {
-            background = Sculpt.sculptedRipple(
-                resources.displayMetrics.density,
-                Sculpt.blend(palette.surface, palette.primary, 0.10f),
-                20,
-                primary,
-                accent = Sculpt.withAlpha(primary, 0.68f),
-            )
-            addView(connectButton, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            ))
-        }
-        hero.addView(connectFrame, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(92),
-            Gravity.BOTTOM,
-        ).apply { leftMargin = dp(16); rightMargin = dp(16); bottomMargin = dp(16) })
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
+        ).apply { bottomMargin = dp(14) })
         addView(hero, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(300),
+            dp(360),
         ).apply { leftMargin = -dp(20); rightMargin = -dp(20) })
 
-        addView(label("PRIVATE NETWORK", 11f, primary, TypefaceStyle.MEDIUM).apply {
+        addView(label("PRIVATE NETWORK  •  LUXURY SECURE", 10f, primary, TypefaceStyle.MEDIUM).apply {
             gravity = Gravity.CENTER
             letterSpacing = spacing(0.30f)
         }, LinearLayout.LayoutParams(
@@ -3196,7 +3218,12 @@ class MainActivity : Activity() {
                 setPadding(dp(4), 0, 0, 0)
             })
         }
-        page.addView(KouroshSceneView(this).apply { alpha = 0.28f }, FrameLayout.LayoutParams(
+        page.addView(ImageView(this).apply {
+            setImageResource(R.drawable.kourosh_palace_cars_bg)
+            scaleType = ScaleType.CENTER_CROP
+            alpha = 0.16f
+            contentDescription = null
+        }, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             dp(300),
         ).apply { topMargin = dp(44) })
