@@ -574,25 +574,8 @@ class OrbitDialView(
         active: Boolean,
         geo: Float,
     ) {
-        if (active && timerText.isNotEmpty()) {
-            textPaint.typeface = monoTypeface
-            textPaint.textAlign = Paint.Align.CENTER
-            textPaint.textSize = 26f * density * geo
-            textPaint.color = Sculpt.onGlass(accent)
-            // The glow is the dark theme's; on a light dial a 14dp accent halo
-            // behind dark digits just muddies them, so it is dropped there.
-            if (light.elevationDp == 0f) {
-                textPaint.setShadowLayer(dp(14) * geo, 0f, 0f, Sculpt.withAlpha(accent, 0.5f))
-            }
-            canvas.drawText(timerText, cx, cy + 7f * density * geo, textPaint)
-            textPaint.clearShadowLayer()
-
-            textPaint.typeface = labelTypeface
-            textPaint.textSize = 9f * density * geo
-            textPaint.letterSpacing = if (AppLanguage.current() != "en") 0f else 0.19f
-            textPaint.color = Sculpt.withAlpha(palette.faint, 0.95f)
-            canvas.drawText(Strings.t("SESSION"), cx, cy + 27f * density * geo, textPaint)
-            textPaint.letterSpacing = spacing(0f)
+        if (active) {
+            drawActiveBadge(canvas, cx, cy, ring, accent, geo)
             return
         }
 
@@ -683,6 +666,92 @@ class OrbitDialView(
         }
         canvas.drawText(cta, cx, cy + dp(26) * geo, textPaint)
         textPaint.letterSpacing = spacing(0f)
+    }
+
+    /** Premium connected state: crown, shield/check and a clear live label. */
+    private fun drawActiveBadge(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        ring: Float,
+        accent: Int,
+        geo: Float,
+    ) {
+        val shieldTop = cy - dp(36) * geo
+        val shieldW = dp(35) * geo
+        val shieldH = dp(41) * geo
+        val crownY = cy - dp(55) * geo
+
+        paint.style = Paint.Style.STROKE
+        paint.strokeJoin = Paint.Join.ROUND
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = 2.2f * density * geo
+        paint.color = Sculpt.withAlpha(palette.primary, 0.96f)
+        val crown = Path().apply {
+            moveTo(cx - dp(18) * geo, crownY + dp(13) * geo)
+            lineTo(cx - dp(14) * geo, crownY - dp(5) * geo)
+            lineTo(cx - dp(5) * geo, crownY + dp(4) * geo)
+            lineTo(cx, crownY - dp(12) * geo)
+            lineTo(cx + dp(6) * geo, crownY + dp(4) * geo)
+            lineTo(cx + dp(15) * geo, crownY - dp(5) * geo)
+            lineTo(cx + dp(18) * geo, crownY + dp(13) * geo)
+            close()
+        }
+        canvas.drawPath(crown, paint)
+        canvas.drawLine(cx - dp(17) * geo, crownY + dp(15) * geo, cx + dp(17) * geo, crownY + dp(15) * geo, paint)
+
+        val shield = Path().apply {
+            moveTo(cx, shieldTop)
+            lineTo(cx + shieldW / 2f, shieldTop + shieldH * 0.14f)
+            lineTo(cx + shieldW / 2f, shieldTop + shieldH * 0.54f)
+            cubicTo(
+                cx + shieldW / 2f, shieldTop + shieldH * 0.82f,
+                cx + shieldW * 0.22f, shieldTop + shieldH * 0.97f,
+                cx, shieldTop + shieldH,
+            )
+            cubicTo(
+                cx - shieldW * 0.22f, shieldTop + shieldH * 0.97f,
+                cx - shieldW / 2f, shieldTop + shieldH * 0.82f,
+                cx - shieldW / 2f, shieldTop + shieldH * 0.54f,
+            )
+            lineTo(cx - shieldW / 2f, shieldTop + shieldH * 0.14f)
+            close()
+        }
+        paint.style = Paint.Style.FILL
+        paint.color = Sculpt.withAlpha(palette.ink, 0.72f)
+        paint.setShadowLayer(dp(12) * geo, 0f, 0f, Sculpt.withAlpha(accent, 0.62f))
+        canvas.drawPath(shield, paint)
+        paint.clearShadowLayer()
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2.2f * density * geo
+        paint.color = Sculpt.withAlpha(palette.primary, 0.98f)
+        canvas.drawPath(shield, paint)
+        paint.strokeWidth = 2.8f * density * geo
+        paint.color = Sculpt.withAlpha(palette.mint, 0.98f)
+        val check = Path().apply {
+            moveTo(cx - shieldW * 0.22f, shieldTop + shieldH * 0.52f)
+            lineTo(cx - shieldW * 0.03f, shieldTop + shieldH * 0.69f)
+            lineTo(cx + shieldW * 0.27f, shieldTop + shieldH * 0.34f)
+        }
+        canvas.drawPath(check, paint)
+
+        textPaint.typeface = labelTypeface
+        textPaint.textAlign = Paint.Align.CENTER
+        textPaint.textSize = 10.5f * density * geo
+        textPaint.letterSpacing = if (AppLanguage.current() != "en") 0f else 0.13f
+        textPaint.color = Sculpt.onGlass(accent)
+        textPaint.setShadowLayer(dp(8) * geo, 0f, 0f, Sculpt.withAlpha(accent, 0.55f))
+        canvas.drawText(Strings.t("CONNECTED"), cx, cy + dp(28) * geo, textPaint)
+        textPaint.clearShadowLayer()
+        if (timerText.isNotEmpty()) {
+            textPaint.typeface = monoTypeface
+            textPaint.textSize = 8.5f * density * geo
+            textPaint.letterSpacing = 0f
+            textPaint.color = Sculpt.withAlpha(palette.faint, 0.92f)
+            canvas.drawText(timerText, cx, cy + dp(43) * geo, textPaint)
+        }
+        textPaint.letterSpacing = spacing(0f)
+        paint.strokeCap = Paint.Cap.BUTT
     }
 
     /**
