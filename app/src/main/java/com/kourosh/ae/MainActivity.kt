@@ -163,7 +163,12 @@ class MainActivity : Activity() {
     private var batteryRow: OrbitSettingsRow? = null
     private var manualEndpointRow: OrbitSettingsRow? = null
     private var gatewayCacheRow: OrbitSettingsRow? = null
+    private var bottomConnectButton: BottomConnectButton? = null
     private var visualState = OrbitDialView.State.DISCONNECTED
+        set(value) {
+            field = value
+            bottomConnectButton?.state = value
+        }
     private var receiverRegistered = false
     private var autoPingRunning = false
     /**
@@ -707,7 +712,7 @@ class MainActivity : Activity() {
         mainRoot.addView(consoleScroll, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
-        ).apply { topMargin = dp(52) })
+        ).apply { topMargin = dp(52); bottomMargin = dp(78) })
         fitConsoleToViewport(consoleScroll, console)
         mainRoot.addView(header, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -717,6 +722,15 @@ class MainActivity : Activity() {
             rightMargin = dp(20)
             topMargin = dp(10)
         })
+        val bottomNav = createBottomNavigation()
+        mainRoot.addView(bottomNav, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(82),
+            Gravity.BOTTOM,
+        ).apply {
+            leftMargin = dp(12)
+            rightMargin = dp(12)
+        })
         mainRoot.setOnApplyWindowInsetsListener { _, insets ->
             (header.layoutParams as FrameLayout.LayoutParams).apply {
                 topMargin = insets.systemWindowInsetTop + dp(10)
@@ -724,8 +738,12 @@ class MainActivity : Activity() {
             }
             (consoleScroll.layoutParams as FrameLayout.LayoutParams).apply {
                 topMargin = insets.systemWindowInsetTop + dp(52)
-                bottomMargin = insets.systemWindowInsetBottom
+                bottomMargin = insets.systemWindowInsetBottom + dp(78)
                 consoleScroll.layoutParams = this
+            }
+            (bottomNav.layoutParams as FrameLayout.LayoutParams).apply {
+                bottomMargin = insets.systemWindowInsetBottom + dp(6)
+                bottomNav.layoutParams = this
             }
             insets
         }
@@ -1481,6 +1499,72 @@ class MainActivity : Activity() {
                 orbitDial.post { orbitDial.sizeScale = target }
             }
         }
+    }
+
+    private fun createBottomNavigation(): View {
+        val nav = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
+            background = Sculpt.sculptedBackground(
+                resources.displayMetrics.density,
+                Color.argb(225, 3, 7, 12),
+                24,
+                stroke = Sculpt.withAlpha(primary, 0.36f),
+            )
+            contentDescription = "ناوبری اصلی Kourosh-AE"
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            clipChildren = false
+            clipToPadding = false
+            setPadding(dp(8), 0, dp(8), 0)
+        }
+        fun item(icon: String, title: String, action: () -> Unit): View = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = true
+            contentDescription = title
+            setOnClickListener { action() }
+            addView(label(icon, 20f, INK, TypefaceStyle.MEDIUM).apply { gravity = Gravity.CENTER })
+            addView(label(title, 9f, MUTED, TypefaceStyle.MEDIUM).apply {
+                gravity = Gravity.CENTER
+                letterSpacing = spacing(0.08f)
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(2) })
+        }
+        row.addView(item("⌂", Strings.t("HOME")) { })
+        row.addView(item("▥", Strings.t("STATS")) { openTrafficMonitorScreen() })
+        row.addView(Space(this), LinearLayout.LayoutParams(dp(82), dp(1)))
+        row.addView(item("▤", Strings.t("LOGS")) { openLogsScreen() })
+        row.addView(item("⚙", Strings.t("SETTINGS")) { openSettingsScreen() })
+        for (index in 0 until row.childCount) {
+            row.getChildAt(index).layoutParams = (row.getChildAt(index).layoutParams ?: LinearLayout.LayoutParams(0, dp(72))).apply {
+                if (index != 2) {
+                    width = 0
+                    height = dp(72)
+                    (this as LinearLayout.LayoutParams).weight = 1f
+                }
+            }
+        }
+        nav.addView(row, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(82),
+            Gravity.BOTTOM,
+        ))
+        val connectButton = BottomConnectButton(this, palette).apply {
+            state = visualState
+            contentDescription = "اتصال یا قطع اتصال VPN"
+            setOnClickListener { toggleTunnel() }
+        }
+        bottomConnectButton = connectButton
+        nav.addView(connectButton, FrameLayout.LayoutParams(dp(78), dp(78), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+            topMargin = -dp(22)
+        })
+        return nav
     }
 
     /**
