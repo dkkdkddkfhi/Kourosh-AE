@@ -104,6 +104,7 @@ class MainActivity : Activity() {
     private var transportRailHeight = 0
     private lateinit var footerWave: OrbitFooterWave
     private lateinit var statusLed: View
+    private var proConnectShield: ProConnectShieldView? = null
     private lateinit var mainRoot: FrameLayout
     private lateinit var pageHost: FrameLayout
     private lateinit var appUpdater: AppUpdater
@@ -1367,6 +1368,7 @@ class MainActivity : Activity() {
 
     /** Status LED colour + glow for the header chip. */
     private fun renderStatusLed() {
+        proConnectShield?.state = visualState
         val (fill, glow) = when (visualState) {
             OrbitDialView.State.CONNECTED -> connected to true
             OrbitDialView.State.DEGRADED -> palette.amber to true
@@ -1503,15 +1505,11 @@ class MainActivity : Activity() {
             setPadding(dp(20), 0, dp(20), 0)
             setOnClickListener { toggleTunnel() }
         }
-        val connectDot = View(this@MainActivity).apply {
-            background = Sculpt.sculptedBackground(
-                resources.displayMetrics.density,
-                Sculpt.withAlpha(MUTED, 0.8f),
-                999,
-                accent = Sculpt.withAlpha(primary, 0.45f),
-            )
+        val shield = ProConnectShieldView(this@MainActivity, palette).apply {
+            state = visualState
         }
-        connectButton.addView(connectDot, LinearLayout.LayoutParams(dp(8), dp(8)).apply {
+        proConnectShield = shield
+        connectButton.addView(shield, LinearLayout.LayoutParams(dp(34), dp(34)).apply {
             rightMargin = dp(12)
         })
         val buttonText = LinearLayout(this@MainActivity).apply {
@@ -7075,7 +7073,7 @@ class MainActivity : Activity() {
         setModeEnabled(true)
     }
 
-    private fun showDisconnected(detail: String = Strings.t("Tap the dial to connect")) {
+    private fun showDisconnected(detail: String = Strings.t("Tap the button to connect")) {
         latencyRequest++
         cancelVerification()
         clearCoreExitIp()
