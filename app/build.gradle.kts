@@ -28,8 +28,8 @@ android {
         applicationId = "com.kourosh.ae"
         minSdk = 26
         targetSdk = 36
-        versionCode = 226
-        versionName = "2.1.16"
+        versionCode = 227
+        versionName = "2.1.17"
 
     }
 
@@ -116,6 +116,7 @@ android {
     dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("com.google.android.material:material:1.12.0")
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 }

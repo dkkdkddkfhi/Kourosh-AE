@@ -558,6 +558,9 @@ class MainActivity : Activity() {
         )
 
         appUpdater = AppUpdater(this)
+        // Register the background release check. WorkManager persists it across
+        // reboots and runs it only when a network is available.
+        UpdateNotificationWorker.schedule(this)
         // Registers the periodic SHARD list refresh. Idempotent, so calling it on
         // every launch is how the job gets re-registered after an app update — a
         // package replace clears JobScheduler's registrations for the app.
