@@ -55,7 +55,7 @@ jobs:
       - name: Upload signed APK and Play AAB artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Kourosh-AE-v2.1.14-release
+          name: Kourosh-AE-v2.1.15-release
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
@@ -65,12 +65,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v2.1.14 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
-            gh release create v2.1.14 --repo "${{ github.repository }}" --target "${{ github.sha }}" \
-              --title 'Kourosh-AE v2.1.14' --notes 'Native five-item navigation with elevated connect control and reference-matched Home hierarchy.'
+          gh release view v2.1.15 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create v2.1.15 --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+              --title 'Kourosh-AE v2.1.15' --notes 'Android-compatible Aether v2.1.0 backport: exit-location policy and Psiphon/Tor runtime controls.'
       - name: Publish signed APK and AAB to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload v2.1.14 app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab \
+          gh release upload v2.1.15 app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab \
             --repo "${{ github.repository }}" --clobber

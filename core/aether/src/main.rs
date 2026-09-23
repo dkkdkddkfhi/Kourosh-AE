@@ -107,6 +107,15 @@ pub struct StartOptions {
     /// v2.0.0: per-transport lists from the DNS screen.
     pub dns_servers_dot: Option<String>,
     pub dns_servers_doh: Option<String>,
+    /// Aether v2.1.0-compatible exit country policy, for example `!IR,AZ,RU`.
+    pub exit_loc: Option<String>,
+    pub exit_loc_secs: u64,
+    pub stats: bool,
+    pub psiphon_region: Option<String>,
+    pub psiphon_mode: Option<String>,
+    pub psiphon_http: Option<SocketAddr>,
+    pub tor_bridge_file: Option<String>,
+    pub tor_relays: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,6 +219,14 @@ impl StartOptions {
             smart_dns_servers: None,
             dns_servers_dot: None,
             dns_servers_doh: None,
+            exit_loc: None,
+            exit_loc_secs: 60,
+            stats: false,
+            psiphon_region: None,
+            psiphon_mode: None,
+            psiphon_http: None,
+            tor_bridge_file: None,
+            tor_relays: None,
         }
     }
 
@@ -280,6 +297,22 @@ pub async fn run_cli() -> Result<()> {
     options.access_token = std::env::var("AETHER_ACCESS_TOKEN").ok();
     options.access_email = std::env::var("AETHER_ACCESS_EMAIL").ok();
     options.gateway = std::env::var("AETHER_GATEWAY").is_ok();
+    options.exit_loc = std::env::var("AETHER_EXIT_LOC").ok();
+    options.exit_loc_secs = std::env::var("AETHER_EXIT_LOC_SECS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value: &u64| (10..=3600).contains(value))
+        .unwrap_or(60);
+    options.stats = std::env::var("AETHER_STATS").is_ok();
+    options.psiphon_region = std::env::var("AETHER_PSIPHON_REGION").ok();
+    options.psiphon_mode = std::env::var("AETHER_PSIPHON_MODE").ok();
+    options.psiphon_http = std::env::var("AETHER_PSIPHON_HTTP")
+        .ok()
+        .map(|value| value.parse())
+        .transpose()
+        .map_err(|_| AetherError::Other("bad AETHER_PSIPHON_HTTP address".into()))?;
+    options.tor_bridge_file = std::env::var("AETHER_TOR_BRIDGE_FILE").ok();
+    options.tor_relays = std::env::var("AETHER_TOR_RELAYS").ok();
 
     select_masque_transport().await;
     options.masque_transport = if std::env::var("AETHER_MASQUE_HTTP2").is_ok() {
@@ -406,6 +439,26 @@ fn apply_runtime_options(options: &StartOptions) {
     set_optional("AETHER_ACCESS_CLIENT_SECRET", &options.access_client_secret);
     set_optional("AETHER_ACCESS_TOKEN", &options.access_token);
     set_optional("AETHER_ACCESS_EMAIL", &options.access_email);
+    set_optional("AETHER_EXIT_LOC", &options.exit_loc);
+    set_optional("AETHER_PSIPHON_REGION", &options.psiphon_region);
+    set_optional("AETHER_PSIPHON_MODE", &options.psiphon_mode);
+    set_optional("AETHER_TOR_BRIDGE_FILE", &options.tor_bridge_file);
+    set_optional("AETHER_TOR_RELAYS", &options.tor_relays);
+    if options.exit_loc_secs != 60 {
+        std::env::set_var("AETHER_EXIT_LOC_SECS", options.exit_loc_secs.to_string());
+    } else {
+        std::env::remove_var("AETHER_EXIT_LOC_SECS");
+    }
+    if options.stats {
+        std::env::set_var("AETHER_STATS", "1");
+    } else {
+        std::env::remove_var("AETHER_STATS");
+    }
+    if let Some(address) = options.psiphon_http {
+        std::env::set_var("AETHER_PSIPHON_HTTP", address.to_string());
+    } else {
+        std::env::remove_var("AETHER_PSIPHON_HTTP");
+    }
     std::env::remove_var("AETHER_TEAM_ENDPOINT");
     if options.gateway {
         std::env::set_var("AETHER_GATEWAY", "1");

@@ -183,6 +183,26 @@ struct NativeStartOptions {
     /// engine's encrypted resolver list at startup, independent of smart_dns.
     dns_servers_dot: Option<String>,
     dns_servers_doh: Option<String>,
+    #[serde(default)]
+    exit_loc: Option<String>,
+    #[serde(default = "default_exit_loc_secs")]
+    exit_loc_secs: u64,
+    #[serde(default)]
+    stats: bool,
+    #[serde(default)]
+    psiphon_region: Option<String>,
+    #[serde(default)]
+    psiphon_mode: Option<String>,
+    #[serde(default)]
+    psiphon_http: Option<String>,
+    #[serde(default)]
+    tor_bridge_file: Option<String>,
+    #[serde(default)]
+    tor_relays: Option<String>,
+}
+
+fn default_exit_loc_secs() -> u64 {
+    60
 }
 
 impl Default for NativeStartOptions {
@@ -224,6 +244,14 @@ impl Default for NativeStartOptions {
             smart_dns_servers: None,
             dns_servers_dot: None,
             dns_servers_doh: None,
+            exit_loc: None,
+            exit_loc_secs: default_exit_loc_secs(),
+            stats: false,
+            psiphon_region: None,
+            psiphon_mode: None,
+            psiphon_http: None,
+            tor_bridge_file: None,
+            tor_relays: None,
         }
     }
 }
@@ -291,6 +319,17 @@ impl TryFrom<NativeStartOptions> for StartOptions {
         options.smart_dns_servers = value.smart_dns_servers.clone();
         options.dns_servers_dot = value.dns_servers_dot.clone();
         options.dns_servers_doh = value.dns_servers_doh.clone();
+        options.exit_loc = value.exit_loc.filter(|value| !value.trim().is_empty());
+        options.exit_loc_secs = value.exit_loc_secs.clamp(10, 3600);
+        options.stats = value.stats;
+        options.psiphon_region = value.psiphon_region.filter(|value| !value.trim().is_empty());
+        options.psiphon_mode = value.psiphon_mode.filter(|value| !value.trim().is_empty());
+        options.psiphon_http = match value.psiphon_http.as_deref().map(str::trim) {
+            None | Some("") => None,
+            Some(raw) => Some(parse_address("psiphon_http", raw)?),
+        };
+        options.tor_bridge_file = value.tor_bridge_file.filter(|value| !value.trim().is_empty());
+        options.tor_relays = value.tor_relays.filter(|value| !value.trim().is_empty());
         Ok(options)
     }
 }

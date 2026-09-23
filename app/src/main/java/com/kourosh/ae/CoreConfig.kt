@@ -195,6 +195,16 @@ object CoreConfig {
             put("dns_servers", prefs.getString("dns_servers_udp", null))
             putOpt("dns_servers_dot", prefs.getString("dns_servers_dot", null)?.ifBlank { null })
             putOpt("dns_servers_doh", prefs.getString("dns_servers_doh", null)?.ifBlank { null })
+            // Aether v2.1.0-compatible controls. They are opt-in and remain
+            // absent from the payload unless the user enables/configures them.
+            putOpt("exit_loc", prefs.getString("aether_exit_loc", null)?.ifBlank { null })
+            put("exit_loc_secs", prefs.getLong("aether_exit_loc_secs", 60L).coerceIn(10L, 3600L))
+            put("stats", prefs.getBoolean("aether_stats", false))
+            putOpt("psiphon_region", prefs.getString("psiphon_region", null)?.ifBlank { null })
+            putOpt("psiphon_mode", prefs.getString("psiphon_mode", null)?.ifBlank { null })
+            putOpt("psiphon_http", prefs.getString("psiphon_http", null)?.ifBlank { null })
+            putOpt("tor_bridge_file", prefs.getString("tor_bridge_file", null)?.ifBlank { null })
+            putOpt("tor_relays", prefs.getString("tor_relays", null)?.ifBlank { null })
         }.toString()
     }
 
