@@ -19,20 +19,23 @@ impl ExitLocationPolicy {
     pub fn parse(raw: &str) -> Option<Self> {
         let mut allowed = Vec::new();
         let mut denied = Vec::new();
-        for token in raw.split([',', ';', ' ', '\n', '\r', '\t']) {
+        let tokens: Vec<&str> = raw.split([',', ';', ' ', '\n', '\r', '\t']).collect();
+        // Aether's syntax uses a leading `!` as a mode marker: `!IR,AZ,RU`
+        // means deny all three countries, not "deny IR and allow AZ/RU".
+        let deny_mode = tokens.iter().map(|token| token.trim()).find(|token| !token.is_empty())
+            .map(|token| token.starts_with('!'))
+            .unwrap_or(false);
+        for token in tokens {
             let token = token.trim();
             if token.is_empty() {
                 continue;
             }
-            let (is_denied, code) = token
-                .strip_prefix('!')
-                .map(|value| (true, value))
-                .unwrap_or((false, token));
+            let code = token.strip_prefix('!').unwrap_or(token);
             let code = code.trim().to_ascii_uppercase();
             if code.len() != 2 || !code.bytes().all(|byte| byte.is_ascii_alphabetic()) {
                 continue;
             }
-            let target = if is_denied { &mut denied } else { &mut allowed };
+            let target = if deny_mode { &mut denied } else { &mut allowed };
             if !target.iter().any(|item| item == &code) {
                 target.push(code);
             }
@@ -84,7 +87,7 @@ mod tests {
     #[test]
     fn ignores_invalid_tokens_and_empty_values() {
         assert!(ExitLocationPolicy::parse("").is_none());
-        let policy = ExitLocationPolicy::parse("!, D, DE, DE").unwrap();
+        let policy = ExitLocationPolicy::parse("DE, D, DE").unwrap();
         assert!(policy.accepts("DE"));
         assert!(!policy.accepts("NL"));
     }
