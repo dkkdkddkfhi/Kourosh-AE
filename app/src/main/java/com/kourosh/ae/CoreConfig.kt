@@ -200,7 +200,7 @@ object CoreConfig {
             putOpt("exit_loc", prefs.getString("aether_exit_loc", null)?.ifBlank { null })
             put("exit_loc_secs", prefs.getLong("aether_exit_loc_secs", 60L).coerceIn(10L, 3600L))
             put("stats", prefs.getBoolean("aether_stats", false))
-            putOpt("psiphon_region", prefs.getString("psiphon_region", null)?.ifBlank { null })
+            putOpt("psiphon_region", egressRegion(context))
             putOpt("psiphon_mode", prefs.getString("psiphon_mode", null)?.ifBlank { null })
             putOpt("psiphon_http", prefs.getString("psiphon_http", null)?.ifBlank { null })
             putOpt("tor_bridge_file", prefs.getString("tor_bridge_file", null)?.ifBlank { null })

@@ -186,6 +186,7 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
     private val vpnModeActive = AtomicBoolean(false)
     private var tun: ParcelFileDescriptor? = null
     private var lastTrafficSampleMs = 0L
+    private var lastLiveNotificationMs = 0L
     private var currentTx = 0L
     private var currentRx = 0L
     private var prevTx = 0L
@@ -4737,21 +4738,17 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
             lastTrafficFlushMs = now
         }
 
-        // The notification is NOT reposted here any more.
-        //
-        // It used to be, every 5 seconds, because it carried live byte counters
-        // and speeds. That was the lock-screen alarm the user reported: the row
-        // is IMPORTANCE_DEFAULT (required, or MIUI's lock screen drops it as
-        // "silent"), and on MIUI every *post* of a DEFAULT row pokes the ambient
-        // display even with setOnlyAlertOnce and no sound or vibration on the
-        // channel. A tunnel left connected overnight therefore woke the screen
-        // 720 times an hour.
-        //
-        // With the counters gone from the text there is nothing left in it that
-        // changes second to second: the elapsed time is drawn by SystemUI's own
-        // chronometer (see [notification]), and protocol and country only change
-        // when something real happens — each of which reposts once, from its own
-        // call site. So the steady state is exactly zero posts.
+        // The foreground row intentionally carries live session telemetry. It is
+        // silent and rate-limited so the user can see consumption without turning
+        // every packet callback into a notification post.
+        if (connected.get() && now - lastLiveNotificationMs >= 5_000L) {
+            lastLiveNotificationMs = now
+            try {
+                getSystemService(NotificationManager::class.java)
+                    .notify(NOTIFICATION_ID, notification())
+            } catch (_: Exception) {
+            }
+        }
         lastTrafficSampleMs = now
     }
 
@@ -4865,6 +4862,7 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
         // out a window inherited from the tunnel that just died.
         prevSpeedSampleMs = 0
         lastTrafficSampleMs = 0
+        lastLiveNotificationMs = 0
         // Per-session latch: each tunnel gets one chance to prove its transport
         // works. Without this reset the flag would stay set for the life of the
         // process, so a later session on a different transport (or a different
@@ -5228,7 +5226,7 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
         val notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(Strings.t("Connecting…"))
             .setContentText(prettyProtocol())
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_kourosh_notification)
             .setLargeIcon(appBadge())
             .setColor(NOTIFICATION_ACCENT)
             .setOngoing(true)
@@ -5339,16 +5337,25 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
         // and a user who reads that and then finds Chrome on their real IP would be
         // right to call it a lie. The port is in the title because it is the one
         // thing they need and the only place they can see it while the app is closed.
-        val title = if (proxyMode) {
-            Strings.tf("SOCKS proxy on %s", CoreConfig.proxyListenPort(this))
+        val duration = if (connectedSince > 0L) {
+            formatDuration(SystemClock.elapsedRealtime() - connectedSince)
         } else {
-            Strings.t("VPN connected")
+            "00:00:00"
         }
+        val sessionUsage = "↓ ${formatBytes(currentRx)}  ↑ ${formatBytes(currentTx)}"
+        val liveSpeed = "↓ ${formatRate(currentSpeedRx)}/s  ↑ ${formatRate(currentSpeedTx)}/s"
+        val title = if (proxyMode) {
+            "${Strings.tf("SOCKS proxy on %s", CoreConfig.proxyListenPort(this))} • $sessionUsage"
+        } else {
+            "${Strings.t("VPN connected")} • $sessionUsage"
+        }
+        val liveSubtitle = "$subtitle • $liveSpeed • $duration"
 
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
-            .setContentText(subtitle)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setContentText(liveSubtitle)
+            .setStyle(Notification.BigTextStyle().bigText(liveSubtitle))
+            .setSmallIcon(R.drawable.ic_kourosh_notification)
             .setLargeIcon(appBadge())
             // Tints the small icon and the header text in the app's own accent,
             // which is what makes the row read as Kourosh-AE's at a glance.
@@ -5386,6 +5393,26 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
         }
 
         return builder.build()
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        val value = bytes.coerceAtLeast(0L).toDouble()
+        return when {
+            value >= 1024 * 1024 * 1024 -> String.format(java.util.Locale.US, "%.2f GB", value / (1024 * 1024 * 1024))
+            value >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f MB", value / (1024 * 1024))
+            value >= 1024 -> String.format(java.util.Locale.US, "%.0f KB", value / 1024)
+            else -> "${bytes.coerceAtLeast(0L)} B"
+        }
+    }
+
+    private fun formatRate(bytesPerSecond: Long): String = formatBytes(bytesPerSecond)
+
+    private fun formatDuration(elapsedMs: Long): String {
+        val totalSeconds = (elapsedMs.coerceAtLeast(0L) / 1000L)
+        val hours = totalSeconds / 3600L
+        val minutes = (totalSeconds % 3600L) / 60L
+        val seconds = totalSeconds % 60L
+        return String.format(java.util.Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
     }
 
     /**

@@ -113,7 +113,7 @@
 
         <service
             android:name=".KouroshAeTileService"
-            android:icon="@drawable/ic_notification"
+            android:icon="@drawable/ic_kourosh_notification"
             android:label="@string/vpn_tile_label"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">

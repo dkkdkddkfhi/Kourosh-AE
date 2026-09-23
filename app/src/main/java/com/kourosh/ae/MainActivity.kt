@@ -3426,6 +3426,15 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(8) })
+
+            var exitPolicyRow: OrbitSettingsRow? = null
+            exitPolicyRow = navRow(Strings.t("Exit location policy"), exitLocationPolicyLabel()) {
+                editExitLocationPolicy { exitPolicyRow?.setValue(exitLocationPolicyLabel()) }
+            }
+            body.addView(exitPolicyRow, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(8) })
             // PERF moved here off the home screen: a once-a-year knob does not earn
             // a quarter of the first thing the user sees.
             var perfRow: OrbitSettingsRow? = null
@@ -5356,6 +5365,36 @@ class MainActivity : Activity() {
             setDimAmount(0.62f)
             setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
             setGravity(Gravity.BOTTOM)
+        }
+    }
+
+    private fun exitLocationPolicyLabel(): String =
+        preferences().getString(AETHER_EXIT_LOC, null)?.trim()?.takeIf { it.isNotEmpty() }
+            ?: Strings.t("Automatic")
+
+    /** Aether v2.1.0-compatible allow/deny country policy, e.g. !IR,AZ,RU or DE,SE. */
+    private fun editExitLocationPolicy(afterSave: () -> Unit) {
+        val field = settingsField(
+            preferences().getString(AETHER_EXIT_LOC, "").orEmpty(),
+            "!IR,AZ,RU  or  DE,SE",
+        )
+        showTextSettingsSheet(
+            Strings.t("Exit location policy"),
+            Strings.t("Reject countries with !, or allow only the listed countries. Leave blank for automatic."),
+            listOf(Strings.t("COUNTRY CODES") to field),
+            validator = { values ->
+                val raw = values.firstOrNull().orEmpty()
+                val bad = raw.split(',', ';', ' ', '\n', '\r', '\t')
+                    .filter { it.isNotBlank() }
+                    .firstOrNull { token ->
+                        val code = token.removePrefix("!").trim()
+                        code.length != 2 || code.any { !it.isLetter() }
+                    }
+                if (bad != null) 0 to Strings.t("Use two-letter country codes, for example !IR or DE") else null
+            },
+        ) { values ->
+            preferences().edit().putString(AETHER_EXIT_LOC, values.firstOrNull().orEmpty()).apply()
+            afterSave()
         }
     }
 
@@ -8441,6 +8480,7 @@ class MainActivity : Activity() {
         const val CUSTOM_DNS_UDP = "dns_servers_udp"
         const val CUSTOM_DNS_DOT = "dns_servers_dot"
         const val CUSTOM_DNS_DOH = "dns_servers_doh"
+        const val AETHER_EXIT_LOC = "aether_exit_loc"
         const val RETRY_OBFUSCATION = "retry_obfuscation_profiles"
         const val TLS_CURVE_PRESET = "tls_curve_preset"
         const val WIREGUARD_DATA_CHECK = "wireguard_data_check"

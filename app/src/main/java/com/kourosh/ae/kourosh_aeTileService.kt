@@ -43,7 +43,7 @@ class KouroshAeTileService : TileService() {
         tile.state = state
         tile.icon = Icon.createWithResource(
             this,
-            R.drawable.ic_notification
+            R.drawable.ic_kourosh_notification
         )
         tile.label = Strings.t("Kourosh-AE")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
