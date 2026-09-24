@@ -1,10 +1,8 @@
-# Kotlin check failed on 2026-09-24 16:49:45 UTC
+# Kotlin check failed on 2026-09-24 16:52:10 UTC
 
 ```
-28:> Task :app:buildRustCoreArm64V8a FAILED
-32:FAILURE: Build failed with an exception.
-34:* What went wrong:
-35:Execution failed for task ':app:buildRustCoreArm64V8a'.
+28:FAILURE: Build failed with an exception.
+30:* What went wrong:
 ```
 
 ## Tail
@@ -34,24 +32,20 @@ Installing NDK (Side by side) 26.3.11579264 in /usr/local/lib/android/sdk/ndk/26
 "Install NDK (Side by side) 26.3.11579264 v.26.3.11579264" complete.
 "Install NDK (Side by side) 26.3.11579264 v.26.3.11579264" finished.
 
-> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
-
-> Task :app:buildRustCoreArm64V8a FAILED
-Error: Rust target aarch64-linux-android is not installed.
-Please run: rustup target add aarch64-linux-android
+[Incubating] Problems report is available at: file:///home/runner/work/Kourosh-AE/Kourosh-AE/build/reports/problems/problems-report.html
 
 FAILURE: Build failed with an exception.
 
 * What went wrong:
-Execution failed for task ':app:buildRustCoreArm64V8a'.
-> Process 'command 'bash'' finished with non-zero exit value 1
+Task 'buildRustCoreX8664' not found in root project 'KOUROSH-AE' and its subprojects. Some candidates are: 'buildRustCoreX86_64'.
 
 * Try:
+> Run gradlew tasks to get a list of available tasks.
+> For more on name expansion, please refer to https://docs.gradle.org/8.13/userguide/command_line_interface.html#sec:name_abbreviation in the Gradle documentation.
 > Run with --stacktrace option to get the stack trace.
 > Run with --info or --debug option to get more log output.
 > Run with --scan to get full insights.
 > Get more help at https://help.gradle.org.
 
-BUILD FAILED in 1m 27s
-1 actionable task: 1 executed
+BUILD FAILED in 1m 23s
 ```
