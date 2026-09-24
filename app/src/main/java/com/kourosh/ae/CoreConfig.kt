@@ -178,7 +178,12 @@ object CoreConfig {
             // Mixed-case SNI (L×Box spec 028): randomise the casing of the SNI
             // hostname on every ClientHello. Off by default — it changes bytes
             // on the wire, so it must be opt-in per network.
-            put("mixed_case_sni", prefs.getBoolean("mixed_case_sni", false))
+            // On by default: the SNI is the one thing about a TLS handshake that a
+            // plain-text middlebox can read without breaking the connection, and
+            // randomising its letter case defeats a case-sensitive hostname match.
+            // It costs nothing when nothing is looking, and every server this app
+            // talks to (Cloudflare's edge) treats the name case-insensitively.
+            put("mixed_case_sni", prefs.getBoolean("mixed_case_sni", true))
             putOpt("dns_servers", text("dns_servers").ifBlank { null })
             putOpt("route_block", text("route_block").ifBlank { null })
             putOpt("route_direct", text("route_direct").ifBlank { null })

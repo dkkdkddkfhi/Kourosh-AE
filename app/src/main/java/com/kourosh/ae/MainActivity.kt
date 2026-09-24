@@ -8256,7 +8256,9 @@ class MainActivity : Activity() {
         ?: H2Fragmentation.OFF
 
     /** Whether the SNI hostname is re-cased on every ClientHello (spec 028). */
-    private fun mixedCaseSni(): Boolean = preferences().getBoolean(MIXED_CASE_SNI, false)
+    // On by default, matching CoreConfig: a case-sensitive SNI filter is the cheapest
+    // kind of DPI there is, and randomising the name's case is free.
+    private fun mixedCaseSni(): Boolean = preferences().getBoolean(MIXED_CASE_SNI, true)
 
     /**
      * One binary choice, because the transform has no parameters: the SNI is
