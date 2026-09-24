@@ -1495,7 +1495,7 @@ class MainActivity : Activity() {
             // crisp at every density, takes the crest gold, and carries the same
             // silhouette the notification and the quick-settings tile use.
             addView(
-                AuroraIconView(this@MainActivity, AuroraIcon.CROWN, primaryText, strokeDp = 1.4f),
+                AuroraIconView(this@MainActivity, AuroraIcon.CROWN, palette.primaryText, strokeDp = 1.4f),
                 FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER),
             )
         }, LinearLayout.LayoutParams(dp(42), dp(42)).apply {
@@ -1549,6 +1549,23 @@ class MainActivity : Activity() {
      * devices or ROMs.
      */
 
+
+    /**
+     * The transport glyphs, in the rail's own order.
+     *
+     * Keyed off the enum rather than the label, so the Persian and Chinese rails get
+     * the same icons as the English one.
+     */
+    private fun railGlyph(protocol: Protocol): AuroraIcon = when (protocol) {
+        // MASQUE takes the globe: it is the transport that reaches out over the two
+        // ports a filtered network has to leave open, which is what the mark says.
+        Protocol.MASQUE -> AuroraIcon.GLOBE
+        Protocol.WIREGUARD -> AuroraIcon.BOLT
+        Protocol.WARP_IN_WARP -> AuroraIcon.LAYERS
+        Protocol.PSIPHON -> AuroraIcon.SHIELD
+        Protocol.TOR -> AuroraIcon.ONION
+        Protocol.SHARD -> AuroraIcon.GAUGE
+    }
 
     private fun railLabel(protocol: Protocol): String = when (protocol) {
         // "WoW" is the table key for the short rail label; the enum's own label

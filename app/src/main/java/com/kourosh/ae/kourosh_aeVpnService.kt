@@ -5507,7 +5507,6 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
             setBounds(0, 0, size, size)
             draw(canvas)
         }
-        }
         return android.graphics.drawable.Icon.createWithBitmap(bitmap)
             .also { cachedBadge = it }
     }

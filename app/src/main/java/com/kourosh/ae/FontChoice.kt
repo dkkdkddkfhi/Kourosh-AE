@@ -42,12 +42,6 @@ object FontChoice {
             ?: Typeface.create("sans", Typeface.NORMAL)
     }
 
-    fun medium(context: Context): Typeface {
-        val chosen = current(context)
-        return when (chosen) {
-            Family.VAZIRMATN, Family.VAZIRMATN_BOLD -> runCatching { ResourcesCompat.getFont(context, R.font.vazirmatn_bold) }.getOrNull()
-            Family.NOTO_SANS, Family.NOTO_SANS_MEDIUM -> runCatching { ResourcesCompat.getFont(context, R.font.noto_sc_medium) }.getOrNull()
-            else -> Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        } ?: Typeface.create("sans-serif-medium", Typeface.NORMAL)
-    }
+    /** Medium: the system's medium face. See [Family] for why there is no other. */
+    fun medium(context: Context): Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
 }
