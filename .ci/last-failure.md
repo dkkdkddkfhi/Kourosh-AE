@@ -1,22 +1,22 @@
-# Gradle failure on 2026-09-24 16:46:38 UTC
+# Gradle failure on 2026-09-24 17:05:22 UTC
 
 ## Errors
 ```
 4870:> Task :app:compileReleaseKotlin FAILED
-4871:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraCards.kt:291:31 Unresolved reference 'wellFill'.
-4872:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraDial.kt:181:33 Argument type mismatch: actual type is 'Float', but 'Int' was expected.
-4873:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraDial.kt:182:34 Argument type mismatch: actual type is 'Float', but 'Int' was expected.
-4874:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:76:59 Unresolved reference 'CONTEXT_FOCUS'.
-4875:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1003:59 Unresolved reference 'CONTEXT_FOCUS'.
-4876:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1029:9 'setSelected' hides member of supertype 'View' and needs an 'override' modifier.
-4877:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/MainActivity.kt:1563:76 Unresolved reference 'CONTEXT_FOCUS'.
-4879:FAILURE: Build failed with an exception.
-4881:* What went wrong:
-4882:Execution failed for task ':app:compileReleaseKotlin'.
+4871:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1037:36 Unresolved reference 'selected'.
+4872:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1038:36 Unresolved reference 'selected'.
+4873:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1039:36 Unresolved reference 'selected'.
+4874:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1040:36 Unresolved reference 'selected'.
+4875:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1042:31 Unresolved reference 'selected'.
+4876:e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1043:32 Unresolved reference 'selected'.
+4878:FAILURE: Build failed with an exception.
+4880:* What went wrong:
+4881:Execution failed for task ':app:compileReleaseKotlin'.
 ```
 
 ## Tail
 ```
+C/C++:         if (n1->link[1] = n2->link[1]) {
 C/C++:             ~~~~~~~~~~~~^~~~~~~~~~~~~
 C/C++: /home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/cpp/badvpn/structure/BAVL.h:398:25: note: place parentheses around the assignment to silence this warning
 C/C++:         if (n1->link[1] = n2->link[1]) {
@@ -74,9 +74,9 @@ C/C++: 13 warnings generated.
 > Task :app:mergeReleaseNativeLibs
 > Task :app:checkReleaseAarMetadata
 > Task :app:processReleaseNavigationResources
-> Task :app:generateReleaseResValues
-> Task :app:compileReleaseNavigationResources
 > Task :app:stripReleaseDebugSymbols
+> Task :app:compileReleaseNavigationResources
+> Task :app:generateReleaseResValues
 > Task :app:mapReleaseSourceSetPaths
 > Task :app:generateReleaseResources
 > Task :app:extractReleaseNativeSymbolTables
@@ -114,13 +114,12 @@ C/C++: 13 warnings generated.
 > Task :app:bundleReleaseResources
 
 > Task :app:compileReleaseKotlin FAILED
-e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraCards.kt:291:31 Unresolved reference 'wellFill'.
-e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraDial.kt:181:33 Argument type mismatch: actual type is 'Float', but 'Int' was expected.
-e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraDial.kt:182:34 Argument type mismatch: actual type is 'Float', but 'Int' was expected.
-e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:76:59 Unresolved reference 'CONTEXT_FOCUS'.
-e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1003:59 Unresolved reference 'CONTEXT_FOCUS'.
-e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1029:9 'setSelected' hides member of supertype 'View' and needs an 'override' modifier.
-e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/MainActivity.kt:1563:76 Unresolved reference 'CONTEXT_FOCUS'.
+e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1037:36 Unresolved reference 'selected'.
+e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1038:36 Unresolved reference 'selected'.
+e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1039:36 Unresolved reference 'selected'.
+e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1040:36 Unresolved reference 'selected'.
+e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1042:31 Unresolved reference 'selected'.
+e: file:///home/runner/work/Kourosh-AE/Kourosh-AE/app/src/main/java/com/kourosh/ae/AuroraWidgets.kt:1043:32 Unresolved reference 'selected'.
 
 FAILURE: Build failed with an exception.
 
@@ -135,6 +134,6 @@ Execution failed for task ':app:compileReleaseKotlin'.
 > Run with --scan to get full insights.
 > Get more help at https://help.gradle.org.
 
-BUILD FAILED in 14m 6s
+BUILD FAILED in 14m 34s
 52 actionable tasks: 52 executed
 ```
