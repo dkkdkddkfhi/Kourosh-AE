@@ -1372,7 +1372,7 @@ class MainActivity : Activity() {
             setPadding(0, 0, dp(10), 0)
             setOnClickListener { openSettingsScreen() }
         }, LinearLayout.LayoutParams(dp(48), dp(48)))
-        addView(ImageView(this).apply {
+        addView(ImageView(this@MainActivity).apply {
             setImageResource(R.drawable.kourosh_ae_logo)
             scaleType = ScaleType.CENTER_INSIDE
             contentDescription = "Kourosh-AE"
