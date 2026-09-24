@@ -1034,13 +1034,13 @@ class AuroraNavItem(
             null
         }
         content.setPadding(
-            Aurora.px(context, if (selected) 12 else 0),
-            Aurora.px(context, if (selected) 5 else 0),
-            Aurora.px(context, if (selected) 12 else 0),
-            Aurora.px(context, if (selected) 5 else 0),
+            Aurora.px(context, if (active) 12 else 0),
+            Aurora.px(context, if (active) 5 else 0),
+            Aurora.px(context, if (active) 12 else 0),
+            Aurora.px(context, if (active) 5 else 0),
         )
-        iconView.setColor(if (selected) Sculpt.onGlass(accent) else palette.muted)
-        label.setTextColor(if (selected) Sculpt.onGlass(accent) else Sculpt.withAlpha(palette.muted, 0.9f))
+        iconView.setColor(if (active) Sculpt.onGlass(accent) else palette.muted)
+        label.setTextColor(if (active) Sculpt.onGlass(accent) else Sculpt.withAlpha(palette.muted, 0.9f))
         contentDescription = label.text
     }
 }
