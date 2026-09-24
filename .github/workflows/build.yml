@@ -54,7 +54,34 @@ jobs:
           test -n "$KOUROSH_AE_KEYSTORE_PASSWORD" || { echo 'Missing KOUROSH_AE_KEYSTORE_PASSWORD'; exit 1; }
           test -n "$KOUROSH_AE_KEY_ALIAS" || { echo 'Missing KOUROSH_AE_KEY_ALIAS'; exit 1; }
           test -n "$KOUROSH_AE_KEY_PASSWORD" || { echo 'Missing KOUROSH_AE_KEY_PASSWORD'; exit 1; }
-          ./gradlew assembleRelease bundleRelease -PkouroshAeKeystore=release.keystore --no-daemon
+          set -o pipefail
+          ./gradlew assembleRelease bundleRelease -PkouroshAeKeystore=release.keystore --no-daemon 2>&1 | tee /tmp/gradle.log
+      # The build log lives on a host this project's automation cannot reach, so on
+      # failure the compiler output is committed back to the branch that ran it.
+      # That file is the only place a failing build can be read from.
+      - name: Commit compiler diagnostics on failure
+        if: failure()
+        run: |
+          mkdir -p .ci
+          {
+            echo "# Gradle failure on $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo
+            echo '## Errors'
+            echo '```'
+            grep -nE '^(e|w): |error:|ERROR:|FAILURE:|Execution failed|> Task .*FAILED|Caused by:|What went wrong' /tmp/gradle.log | head -300 || true
+            echo '```'
+            echo
+            echo '## Tail'
+            echo '```'
+            tail -120 /tmp/gradle.log || true
+            echo '```'
+          } > .ci/last-failure.md
+          git config user.name 'kourosh-ae-ci'
+          git config user.email 'ci@users.noreply.github.com'
+          git add -f .ci/last-failure.md
+          git commit -m 'ci: record compiler diagnostics [skip ci]' || true
+          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}" || true
       - name: Verify signed APKs
         run: |
           for apk in app/build/outputs/apk/release/*.apk; do

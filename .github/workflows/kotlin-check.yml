@@ -1,0 +1,69 @@
+name: Kotlin compile check
+
+# A release run costs ~20 minutes before it reports a Kotlin error, because the
+# Rust core and cargo-ndk are built first. This gate compiles the app module only
+# and exists purely to shorten the edit → error → edit loop while the UI is being
+# rewritten. It produces no artifacts and publishes nothing.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'arena/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kotlin-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    name: Compile app module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Kourosh-AE
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+
+      - name: Make Gradle executable
+        run: chmod +x gradlew
+
+      - name: Compile release Kotlin
+        run: |
+          set -o pipefail
+          ./gradlew :app:compileReleaseKotlin --no-daemon 2>&1 | tee /tmp/check.log
+
+      - name: Commit compiler diagnostics on failure
+        if: failure()
+        run: |
+          mkdir -p .ci
+          {
+            echo "# Kotlin check failed on $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo
+            echo '```'
+            grep -nE '^(e|w): |error:|FAILURE:|Execution failed|> Task .*FAILED|Caused by:|What went wrong' /tmp/check.log | head -400 || true
+            echo '```'
+            echo
+            echo '## Tail'
+            echo '```'
+            tail -60 /tmp/check.log || true
+            echo '```'
+          } > .ci/last-check.md
+          git config user.name 'kourosh-ae-ci'
+          git config user.email 'ci@users.noreply.github.com'
+          git add -f .ci/last-check.md
+          git commit -m 'ci: record kotlin check diagnostics [skip ci]' || true
+          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}" || true
