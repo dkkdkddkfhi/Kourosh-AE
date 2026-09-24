@@ -2,10 +2,10 @@
 
 ## Intent
 
-Kourosh-AE should feel like a calm, trustworthy dark Android system tool. The home screen is a
-single-purpose connection console: the connection state is visible at a glance, the main
-action is physically obvious, and live connection facts (exit IP, country, data, duration)
-are readable without scrolling.
+Kourosh-AE should feel like a royal Persian command console: black glass, gold frames, a live
+connection dial. The home screen is a single-purpose connection console: the connection state
+is visible at a glance, the main action is physically obvious, and live connection facts
+(exit IP, country, rates, totals, duration) are readable without scrolling.
 
 This is Kourosh-AE's own visual system. Any third-party app is an interaction reference only;
 do not copy its code, wording, logo, or branding.
@@ -32,10 +32,12 @@ do not copy its code, wording, logo, or branding.
 | Error | `#F2A39B` | `#B3261E` |
 | Accents | mint `#D4A64A` · violet `#8A6420` · amber `#F6D98B` | mint `#0E9C82` · violet `#6B5BD6` · amber `#A96A08` |
 
-- **Text vs graphics.** Every accent has a `…Text` sibling used for letters. On the dark palette
-  the vivid values already clear 4.5:1, so the two are identical; on the light palette the text
-  sibling is darkened until it clears 4.5:1 on the card, the page and a selected row. Shapes keep
-  the vivid colour — that is what makes the light theme still read as Kourosh-AE.
+- **Text vs graphics.** Every accent has a `…Text` sibling used for letters, and every letter
+  colour in both palettes clears 4.5:1 on the surfaces it sits on. On the dark palette most
+  pairs are identical — except violet (letters `#D9B45C`, shapes `#8A6420`) and danger
+  (letters `#F2A39B`, shapes `#B3372F`), whose deep royal values fail as letters — and the
+  tertiary `faint` was lifted to `#8F8060` for the same reason. Shapes keep the deep colours,
+  which is what keeps the dark console royal instead of washed out.
 - **Lighting is a property of the palette.** Depth on dark comes from a white specular and an
   inner bottom shadow; on light those vanish, so the model inverts: a real drop shadow
   (`Sculpt.Lighting.elevationDp`) and a card that is *lighter* than the page.
@@ -46,23 +48,29 @@ do not copy its code, wording, logo, or branding.
 
 ## Home screen
 
+A royal masthead opens the screen: the lion-crest logo beside the KOUROSH-AE / PRIVATE NETWORK
+lockup, with the connection LED next to it. On the dark theme the palace artwork sits behind
+the whole screen at 14% under a scrim; the light theme skips it and stays clean porcelain.
+
 The screen is one reading order, top to bottom, and each band answers exactly one question:
 
-1. **Stage** — a sculpted panel with a lit neon frame. State pill and live throughput sit above
-   the dial; the headline and its detail sit below it; latency and transport close the panel.
-   Everything needed to answer "is the tunnel up, on what, how fast" is inside one object.
-2. **Metrics** — the session counters (down / up / speed).
+1. **Stage** — a sculpted panel with a lit gold frame. State pill and live throughput sit above
+   the dial; the headline and its detail sit below it; latency and transport close the panel
+   in gold-lit pills. Everything needed to answer "is the tunnel up, on what, how fast" is
+   inside one object.
+2. **Metrics** — live rates (download / upload / combined) as waveform tiles, with the session
+   totals on one line beneath them.
 3. **Exit node** — the address the tunnel is really leaving from.
-4. **Transport** — the picker, locked while a tunnel is up.
+4. **Transport** — the picker under a SELECT PROTOCOL caption, locked while a tunnel is up.
 5. **Chain / split / MIM** — the one applicable card, in a fixed-height slot.
 6. **Signal trace** — the strip that closes the screen.
 
 Rules that come out of that order:
 
-- Keep the top of the screen quiet. The wordmark, the "server" badge, the tagline and the
-  security panel are gone: the brand lives on the launcher icon, the splash and the header,
-  and an app may not advertise privacy facts the core has not reported. State is carried by
-  the dial, the pill and the headline, which all read the same source.
+- The header carries the brand: crest logo plus the KOUROSH-AE / PRIVATE NETWORK lockup. The
+  "server" badge, the tagline and the security panel stay gone: the exit card states the real
+  exit, and an app may not advertise privacy facts the core has not reported. State is carried
+  by the dial, the pill and the headline, which all read the same source.
 - Put the circular connection control at the visual centre of the stage. It is the only large,
   filled control on the screen and has a minimum 176dp target.
 - Place the selected connection status immediately below the circle.
@@ -88,12 +96,20 @@ Rules that come out of that order:
   graph over 280ms without moving surrounding content.
 - Respect Android accessibility: every interactive element has a clear content description;
   colour never carries state alone.
+- While turning on, the dial shows a live percent answering "how much is left": the
+  transport's own number when it reports one (Tor bootstrap), otherwise a UI-side
+  time-based estimate that asymptotes at 95% and clears the moment the tunnel resolves.
+- Connected is a lighting state, not a colour swap: the stage frame goes bright in the
+  state accent, its fill lifts, the metric tiles undim, the live-speed readout takes the
+  connected accent, and (dark theme) the palace backdrop fades brighter. All of it reverts
+  on disconnect — a glow that outlives the tunnel would be a lie.
 
 ## Guardrails
 
 - No copied third-party assets, names, code, screenshots, or branding.
 - No decorative gradients, glow, oversized text, fake statistics, or nested-card dashboards. The
-  lit frames and the dial's halo are the only light effects in the app, and they carry state
-  rather than decoration.
+  lit frames, the dial's halo and the dark theme's 14% palace backdrop are the only light
+  effects in the app; the first two carry state, and the third is atmosphere that never sits
+  behind text without its scrim.
 - No extra UI libraries for this first screen. Add Jetpack Compose or Material dependencies
   only when the app grows enough screens to justify that migration.

@@ -32,6 +32,20 @@ object TunnelStatus {
     var isProxyMode: Boolean = false
         internal set
 
+    /**
+     * True while a connect is in flight but no tunnel is up yet.
+     *
+     * Set by the service's sendStatus funnel: true on every CONNECTING-family
+     * status, false on every terminal one (and cleared by stopTunnel for the
+     * teardowns that send no broadcast). The activity reads its own dial state
+     * instead, but the Quick Settings tile cannot see that — this flag is what
+     * lets a tile tap cancel a mid-handshake connect rather than fall through
+     * to a second CONNECT the service's start-guard would silently drop.
+     */
+    @Volatile
+    var isConnecting: Boolean = false
+        internal set
+
     /** True when either data path is up: Rust core (proxy/other protocols) or tun2socks (VPN). */
     fun isActive(): Boolean = NativeCore.isRunning() || Tun2SocksManager.isRunning || isProxyMode
 

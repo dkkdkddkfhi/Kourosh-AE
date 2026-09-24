@@ -85,11 +85,13 @@ class OrbitDialView(
         }
 
     /**
-     * Connect progress, 0..100, or -1 for "no measurable progress".
+     * Connect progress, 0..100, or -1 for "no progress to show".
      *
-     * Only drawn in [State.CONNECTING], and only when non-negative: a transport
-     * that cannot report real progress shows the spinner alone rather than a
-     * fabricated number. See KouroshAeVpnService.EXTRA_PROGRESS.
+     * Only drawn in [State.CONNECTING], and only when non-negative. Transports
+     * that report real progress (Tor bootstrap) write it directly via
+     * KouroshAeVpnService.EXTRA_PROGRESS; the rest get a UI-side time-based
+     * estimate from MainActivity that climbs toward 95% and clears on resolve —
+     * an answer to "how much is left", never presented as a measurement.
      */
     var progressPercent: Int = -1
         set(value) {
