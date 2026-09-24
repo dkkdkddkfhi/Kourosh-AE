@@ -72,6 +72,16 @@ class MainActivity : Activity() {
     private lateinit var chipLatency: TextView
     private lateinit var chipProtocol: TextView
     private var homeLiveSpeed: TextView? = null
+
+    /**
+     * The state pill at the top of the home stage.
+     *
+     * Null until the console is built, and the renderer below is null-safe on
+     * purpose: [renderStatusLed] also runs from paths that can fire before the
+     * first layout (a broadcast landing during onCreate), and the header LED must
+     * still be painted in that case.
+     */
+    private var stageStatusPill: TextView? = null
     private lateinit var tileDown: MetricTile
     private lateinit var tileUp: MetricTile
     private lateinit var tileSpeed: MetricTile
@@ -682,15 +692,11 @@ class MainActivity : Activity() {
         }
         val header = createHeader()
         val console = createProHomeConsole()
-        mainRoot.addView(ImageView(this).apply {
-            setImageResource(R.drawable.kourosh_palace_cars_bg)
-            scaleType = ScaleType.CENTER_CROP
-            alpha = 0.28f
-            contentDescription = null
-        }, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        ))
+        // No full-bleed photo behind the console. The stage carries the visual
+        // weight now, and a 28%-alpha image under a sculpted panel reads as dirt
+        // on the glass rather than as depth — it was also the single reason the
+        // old hero needed a dark scrim over it. The palace artwork still opens
+        // the app on the splash (see showOpeningOverlay) and nothing else.
         // The console can still scroll, but it is meant not to need it: the dial
         // shrinks first (see [fitConsoleToViewport]) and scrolling is only the
         // last resort on a screen too short even for the smallest dial. Clipping
@@ -1423,6 +1429,42 @@ class MainActivity : Activity() {
             999,
             accent = if (glow) Sculpt.lighten(fill, 0.4f) else null,
         )
+        // The stage pill says the same thing in words, so state is never carried
+        // by the dial's colour alone. Text takes the *Text sibling of each accent
+        // — the vivid values are 3-4:1 on a light card, which is fine for a ring
+        // and under the floor for letters.
+        //
+        // One outline colour, passed as the accent: GlassDrawable prefers accent
+        // over stroke, and the accent is also what drives the bloom. Passing a
+        // dim accent beside a brighter stroke produced a dimmer frame while
+        // active than while idle, which is backwards.
+        val pill = stageStatusPill ?: return
+        pill.text = when (visualState) {
+            OrbitDialView.State.CONNECTED -> Strings.t("Connected")
+            OrbitDialView.State.DEGRADED -> Strings.t("Connection degraded")
+            OrbitDialView.State.CONNECTING -> Strings.t("Connecting")
+            OrbitDialView.State.FAILED -> Strings.t("Connection failed")
+            OrbitDialView.State.DISCONNECTED -> Strings.t("Not connected")
+        }
+        pill.setTextColor(
+            when (visualState) {
+                OrbitDialView.State.CONNECTED -> palette.connectedText
+                OrbitDialView.State.DEGRADED -> palette.amberText
+                OrbitDialView.State.CONNECTING -> palette.primaryText
+                OrbitDialView.State.FAILED -> palette.dangerText
+                OrbitDialView.State.DISCONNECTED -> palette.muted
+            },
+        )
+        pill.background = Sculpt.sculptedBackground(
+            resources.displayMetrics.density,
+            Sculpt.recess(palette.surface, 0.25f),
+            999,
+            accent = if (glow) {
+                Sculpt.withAlpha(fill, 0.55f)
+            } else {
+                Sculpt.withAlpha(MUTED, 0.35f)
+            },
+        )
     }
 
     /**
@@ -1510,9 +1552,15 @@ class MainActivity : Activity() {
         val nav = FrameLayout(this).apply {
             clipChildren = false
             clipToPadding = false
+            // Palette-driven, not the near-black this used to be. The bar's labels
+            // and glyphs are ink-coloured, so on the Porcelain theme a #03070C
+            // pill put near-black text on near-black: the whole navigation was
+            // unreadable in the light theme. Blending the canvas towards the
+            // surface keeps the dark theme's look (both are near-black there) and
+            // gives the light theme a white bar on its grey page.
             background = Sculpt.sculptedBackground(
                 resources.displayMetrics.density,
-                Color.argb(225, 3, 7, 12),
+                Sculpt.blend(palette.canvas, palette.surface, 0.88f),
                 24,
                 stroke = Sculpt.withAlpha(primary, 0.36f),
             )
@@ -1573,237 +1621,322 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Native recreation of the ZIP reference: a live hero, one horizontal connect
-     * action, then the compact metrics/IP/protocol stack. The old circular dial is
-     * intentionally not placed here; its state is still kept for compatibility with
-     * the existing status renderer, while this button is the user-facing action.
+     * The home console: one stage that answers "am I connected", then the facts.
+     *
+     * ## Why it was rebuilt
+     *
+     * The screen used to be a full-bleed photo hero with four things stacked on
+     * top of the same busy image — a wordmark, a server badge, the dial and the
+     * status block — followed by a tagline, a ping/speed bar, three tiles, the
+     * exit card, the transport rail, the chain card and a lit "SECURE CONNECTION"
+     * panel. Nothing in that stack said which part was the connection and which
+     * part was decoration, the status line sat *under* the control that changes
+     * it, and the security panel advertised facts ("No logs · No limits · Full
+     * privacy") the core had never reported.
+     *
+     * ## The new composition
+     *
+     * One reading order, top to bottom, each band answering exactly one question:
+     *
+     *  1. **STAGE** — a sculpted panel with a lit neon frame. State pill and live
+     *     throughput above the dial, headline and detail below it, ping and
+     *     transport closing it. Everything needed to answer "is the tunnel up, on
+     *     what, and how fast" sits inside one object, so the eye never has to
+     *     compare two unrelated bands to get one answer.
+     *  2. **METRICS** — the session counters (down / up / speed).
+     *  3. **EXIT NODE** — the address the tunnel is really leaving from.
+     *  4. **TRANSPORT** — the picker, locked while a tunnel is up.
+     *  5. The one applicable chain / split / MIM card, in a fixed-height slot.
+     *  6. The signal trace that closes the screen.
+     *
+     * ## What is gone, and why
+     *
+     *  - the wordmark: the brand lives on the launcher icon, the splash and the
+     *    header, not floating over the connect control;
+     *  - the "SERVER / Automatic" badge: it was not a fact — the exit card below
+     *    states the real exit, and "Automatic" described a preference, not a
+     *    server;
+     *  - the "PRIVATE NETWORK · LUXURY SECURE" tagline: marketing copy in the one
+     *    place the app has to behave like a tool;
+     *  - the security panel: an app may not advertise privacy before the core has
+     *    reported anything. State is carried by the dial, the pill and the
+     *    headline, which all read the same source.
+     *
+     * ## Height budget
+     *
+     * The stage keeps the dial at the hero's 250dp box — a redesign must not
+     * shrink the one control the user came for — and pays for it by deleting the
+     * bands that sat *around* it: the tagline, the ping/speed bar and the
+     * security panel are ~150dp of column that no longer exists. That matters
+     * because [fitConsoleToViewport] can only shrink the dial, so every dp spent
+     * on decoration above it is a dp taken off the control itself.
      */
     private fun createProHomeConsole(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER_HORIZONTAL
-        setPadding(dp(20), 0, dp(20), dp(20))
+        setPadding(dp(16), 0, dp(16), dp(16))
         clipChildren = false
         clipToPadding = false
+        val density = resources.displayMetrics.density
 
-        val hero = FrameLayout(this@MainActivity).apply {
+        // ---------------------------- 1. the stage ----------------------------
+        val stage = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            clipChildren = false
+            // The frame is the same fixed neon accent the cards use, lit in every
+            // state: the panel must not lose its outline the moment a session
+            // starts, which is what a state-driven accent did to the rail. The
+            // accent doubles as the bloom colour in GlassDrawable, so it has to
+            // clear its alpha floor (40/255) to read as lit rather than faint.
             background = Sculpt.sculptedBackground(
-                resources.displayMetrics.density,
-                Color.BLACK,
-                30,
-                accent = Sculpt.withAlpha(primary, 0.30f),
+                density,
+                Sculpt.blend(palette.surface, palette.ink, 0.04f),
+                28,
+                accent = Sculpt.withAlpha(palette.neonBlue, 0.5f),
             )
+            setPadding(dp(14), dp(12), dp(14), dp(14))
+        }
+
+        // Top row: what the tunnel is doing (left) and how fast (right).
+        val stageTop = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        stageStatusPill = label(
+            Strings.t("Not connected"),
+            9.5f,
+            MUTED,
+            TypefaceStyle.MEDIUM,
+        ).apply {
+            gravity = Gravity.CENTER
+            letterSpacing = spacing(0.10f)
+            setPadding(dp(11), dp(5), dp(11), dp(5))
+            background = Sculpt.sculptedBackground(
+                density,
+                Sculpt.recess(palette.surface, 0.25f),
+                999,
+                stroke = Sculpt.withAlpha(MUTED, 0.35f),
+            )
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            // A cap, not just an ellipsis: this row also carries the live speed
+            // readout, and a long localized state string ("Connection degraded"
+            // and its Persian twin) would otherwise push it off the stage — the
+            // row is inside a clipChildren=false parent, so an overflowing pill
+            // would draw outside the panel instead of being clipped by it.
+            maxWidth = dp(160)
+            contentDescription = "وضعیت اتصال"
+        }
+        stageTop.addView(
+            stageStatusPill,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        // Live throughput — the same view the metrics ticker has always written
+        // to. It moved inside the stage so one band answers "how fast" instead of
+        // a second bar repeating what the SPEED tile already shows.
+        homeLiveSpeed = label("↓ 0 B/S   ↑ 0 B/S", 10f, MUTED, TypefaceStyle.MEDIUM).apply {
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            letterSpacing = spacing(0.04f)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            contentDescription = "سرعت زنده آپلود و دانلود"
+        }
+        stageTop.addView(
+            homeLiveSpeed,
+            LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f,
+            ).apply { leftMargin = dp(8) },
+        )
+        stage.addView(
+            stageTop,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
+        // The dial: the only large filled control on the screen, centred. Its
+        // halo and pulse rings are inside its own measured box — see
+        // OrbitDialView.onMeasure for why that box is ring + bleed, and why no
+        // ancestor has to stop clipping for the glow to survive. The box is the
+        // same 250dp the hero gave it, so the redesign does not shrink the one
+        // control the user came for.
+        orbitDial.sizeScale = 1f
+        stage.addView(
+            orbitDial,
+            LinearLayout.LayoutParams(dp(250), dp(250)).apply { topMargin = dp(4) },
+        )
+
+        connectionTitle.gravity = Gravity.CENTER
+        connectionTitle.letterSpacing = spacing(0.05f)
+        connectionDetail.gravity = Gravity.CENTER
+        connectionDetail.letterSpacing = spacing(0.03f)
+        // Seed the idle paint here rather than waiting for a broadcast.
+        //
+        // A cold start with no tunnel running receives nothing: the service only
+        // broadcasts on state *changes*, so neither the receiver nor
+        // [renderStatus] ever fires, and the two views that now carry the whole
+        // status line of the stage would sit empty under a dial that says
+        // "TAP TO CONNECT". This is the same text showDisconnected() writes, kept
+        // in one place so the two can never drift.
+        connectionTitle.setTextColor(INK)
+        connectionTitle.text = Strings.t("Not connected")
+        connectionDetail.text = Strings.t("Tap the button to connect")
+        stage.addView(
+            connectionTitle,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(12) },
+        )
+        stage.addView(
+            connectionDetail,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(3) },
+        )
+
+        // Ping and transport as pills. Both carry live text: the latency chip is
+        // the tap target for a manual probe, the protocol chip relabels itself
+        // when the rail moves.
+        val chipRow = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
             clipChildren = false
         }
-        hero.addView(ImageView(this@MainActivity).apply {
-            setImageResource(R.drawable.kourosh_palace_cars_bg)
-            scaleType = ScaleType.CENTER_CROP
-            alpha = 0.84f
-            contentDescription = null
-        }, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        ))
-        hero.addView(View(this@MainActivity).apply {
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(
-                    Color.argb(180, 2, 5, 8),
-                    Color.argb(35, 2, 5, 8),
-                    Color.argb(210, 2, 5, 8),
-                ),
-            )
-        }, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        ))
-        val brand = label("KOUROSH AE", 13f, primary, TypefaceStyle.MEDIUM).apply {
-            gravity = Gravity.CENTER
-            letterSpacing = spacing(0.28f)
-            setShadowLayer(dp(9).toFloat(), 0f, 0f, Sculpt.withAlpha(primary, 0.75f))
-        }
-        hero.addView(brand, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP,
-        ).apply { topMargin = dp(16) })
-
-        val serverBadge = TextView(this@MainActivity).apply {
-            text = "◉  SERVER\n    ${Strings.t("Automatic")}"
+        fun stageChip(view: TextView): TextView = view.apply {
             textSize = 10f
-            setTextColor(INK)
-            typeface = Typefaces.medium(this@MainActivity)
-            letterSpacing = spacing(0.08f)
-            gravity = Gravity.CENTER_VERTICAL
+            setTextColor(Sculpt.withAlpha(MUTED, 0.95f))
+            gravity = Gravity.CENTER
+            letterSpacing = spacing(0.06f)
             setPadding(dp(12), dp(6), dp(12), dp(6))
             background = Sculpt.sculptedBackground(
-                resources.displayMetrics.density,
-                Color.argb(190, 2, 12, 18),
+                density,
+                Sculpt.recess(palette.surface, 0.25f),
                 999,
-                stroke = Sculpt.withAlpha(connected, 0.75f),
-                accent = Sculpt.withAlpha(connected, 0.38f),
+                stroke = Sculpt.withAlpha(palette.divider, 0.55f),
             )
-            contentDescription = Strings.t("Selected server")
-            setOnClickListener { openSettingsScreen() }
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
-        hero.addView(serverBadge, FrameLayout.LayoutParams(
-            dp(132), dp(48), Gravity.TOP or Gravity.END,
-        ).apply { topMargin = dp(54); rightMargin = dp(16) })
+        chipRow.addView(stageChip(chipLatency))
+        chipRow.addView(
+            stageChip(chipProtocol),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { leftMargin = dp(7) },
+        )
+        stage.addView(
+            chipRow,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(12) },
+        )
 
-        orbitDial.sizeScale = 1f
-        hero.addView(orbitDial, FrameLayout.LayoutParams(
-            dp(250),
-            dp(250),
-            Gravity.CENTER,
-        ).apply { topMargin = dp(4) })
-        val statusBlock = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(5), dp(12), dp(5))
-            background = Sculpt.sculptedBackground(
-                resources.displayMetrics.density,
-                Color.argb(170, 3, 7, 10),
-                16,
-                accent = Sculpt.withAlpha(primary, 0.40f),
-            )
-        }
-        connectionTitle.gravity = Gravity.CENTER
-        connectionTitle.textSize = 17f
-        connectionTitle.setTextColor(INK)
-        connectionTitle.letterSpacing = spacing(0.07f)
-        connectionDetail.gravity = Gravity.CENTER
-        connectionDetail.textSize = 10f
-        connectionDetail.setTextColor(MUTED)
-        connectionDetail.letterSpacing = spacing(0.10f)
-        statusBlock.addView(connectionTitle, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ))
-        statusBlock.addView(connectionDetail, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(2) })
-        hero.addView(statusBlock, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
-        ).apply { bottomMargin = dp(14) })
-        addView(hero, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(430),
-        ).apply { leftMargin = -dp(20); rightMargin = -dp(20) })
+        addView(
+            stage,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(4) },
+        )
 
-        addView(label("PRIVATE NETWORK  •  LUXURY SECURE", 10f, primary, TypefaceStyle.MEDIUM).apply {
-            gravity = Gravity.CENTER
-            letterSpacing = spacing(0.30f)
-        }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(14); bottomMargin = dp(10) })
-
-        val liveInfo = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = Sculpt.sculptedBackground(
-                resources.displayMetrics.density,
-                Color.BLACK,
-                18,
-                accent = Sculpt.withAlpha(primary, 0.24f),
-            )
-        }
-        chipLatency.text = Strings.t("PING —")
-        chipLatency.textSize = 11f
-        chipLatency.setTextColor(MUTED)
-        chipLatency.gravity = Gravity.CENTER
-        chipLatency.letterSpacing = spacing(0.08f)
-        liveInfo.addView(chipLatency, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        homeLiveSpeed = label("↓ 0 B/S   ↑ 0 B/S", 11f, MUTED, TypefaceStyle.MEDIUM).apply {
-            gravity = Gravity.CENTER
-            letterSpacing = spacing(0.05f)
-        }
-        liveInfo.addView(homeLiveSpeed, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        addView(liveInfo, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(10); bottomMargin = dp(10) })
-
+        // -------------------------- 2. session metrics --------------------------
         val tiles = LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(tileDown, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
-            addView(tileUp, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
-            addView(tileSpeed, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            clipChildren = false
         }
-        addView(tiles, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ))
-        addView(exitNodeCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(14) })
-        addView(transportRail, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            transportRailHeight,
-        ).apply { topMargin = dp(10) })
+        tiles.addView(
+            tileDown,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { rightMargin = dp(8) },
+        )
+        tiles.addView(
+            tileUp,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { rightMargin = dp(8) },
+        )
+        tiles.addView(tileSpeed, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        addView(
+            tiles,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(12) },
+        )
+
+        // --------------------------- 3. the exit node ---------------------------
+        addView(
+            exitNodeCard,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) },
+        )
+
+        // ------------------------- 4. the transport picker ----------------------
+        addView(
+            transportRail,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                transportRailHeight,
+            ).apply { topMargin = dp(10) },
+        )
+
+        // ---------------- 5. chain / smart split / MIM, one slot ----------------
+        // Exactly one of the three is ever applicable, and [renderChainCard] does
+        // the swap, so this band keeps its height whichever transport is picked.
         homePsiphonCountryRow = navRow(Strings.t("Psiphon country"), egressRegionLabel()) {
             chooseEgressRegion { homePsiphonCountryRow?.setValue(egressRegionLabel()) }
         }.also { row ->
             row.visibility = if (selectedProtocol == Protocol.PSIPHON) View.VISIBLE else View.GONE
         }
-        addView(homePsiphonCountryRow!!, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(8) })
-        addView(chainCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(56),
-        ).apply { topMargin = dp(10) })
-        addView(smartSplitCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(56),
-        ).apply { topMargin = dp(10) })
-        addView(mimCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(56),
-        ).apply { topMargin = dp(10) })
-        val secureCard = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = Sculpt.sculptedBackground(
-                resources.displayMetrics.density,
-                Color.argb(205, 2, 12, 18),
-                18,
-                stroke = Sculpt.withAlpha(primary, 0.62f),
-                accent = Sculpt.withAlpha(connected, 0.28f),
-            )
-            addView(label("◎", 28f, connected, TypefaceStyle.MEDIUM), LinearLayout.LayoutParams(dp(46), dp(44)))
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(label(Strings.t("SECURE CONNECTION"), 12f, connected, TypefaceStyle.MEDIUM).apply {
-                    letterSpacing = spacing(0.16f)
-                })
-                addView(label(Strings.t("No logs  ·  No limits  ·  Full privacy"), 10f, INK, TypefaceStyle.REGULAR).apply {
-                    alpha = 0.86f
-                    letterSpacing = spacing(0.05f)
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = dp(4)
-                })
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                leftMargin = dp(8)
-            })
-            addView(label("▣", 24f, primary, TypefaceStyle.MEDIUM).apply {
-                contentDescription = Strings.t("AES-256 encryption")
-            }, LinearLayout.LayoutParams(dp(42), dp(44)))
-        }
-        addView(secureCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(64),
-        ).apply { topMargin = dp(10) })
-        addView(footerWave, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(36),
-        ).apply { topMargin = dp(10) })
+        addView(
+            homePsiphonCountryRow!!,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(8) },
+        )
+        addView(
+            chainCard,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(56),
+            ).apply { topMargin = dp(8) },
+        )
+        addView(
+            smartSplitCard,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(56),
+            ).apply { topMargin = dp(8) },
+        )
+        addView(
+            mimCard,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(56),
+            ).apply { topMargin = dp(8) },
+        )
+
+        // --------------------------- 6. the signal trace ------------------------
+        addView(
+            footerWave,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(30),
+            ).apply { topMargin = dp(8) },
+        )
     }
 
     private fun createConnectionConsole(): LinearLayout = LinearLayout(this).apply {

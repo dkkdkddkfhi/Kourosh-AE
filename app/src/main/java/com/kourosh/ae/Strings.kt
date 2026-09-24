@@ -446,6 +446,7 @@ object Strings {
         "TOR OVER WARP" to Triple("TOR OVER WARP", "تور روی وارپ", "Tor over WARP"),
         "TROUBLESHOOTING" to Triple("TROUBLESHOOTING", "عیب‌یابی", "故障排除"),
         "Taiwan" to Triple("Taiwan", "تایوان", "台湾"),
+        "Tap the button to connect" to Triple("Tap the button to connect", "برای اتصال، دکمه را بزنید", "点击按钮连接"),
         "Tap the dial to connect" to Triple("Tap the dial to connect", "برای اتصال، دکمه را لمس کنید", "点击拨盘进行连接"),
         "Tap to download" to Triple("Tap to download", "برای دانلود بزنید", "点按下载"),
         "Tapping Update opens the download in your browser. Open the downloaded file to install it." to Triple("Tapping Update opens the download in your browser. Open the downloaded file to install it.", "با زدن بروزرسانی، دانلود در مرورگر شما باز می‌شود. برای نصب، فایل دانلودشده را باز کنید.", "点击“更新”将在浏览器打开下载页。下载完成后请打开文件安装。"),
