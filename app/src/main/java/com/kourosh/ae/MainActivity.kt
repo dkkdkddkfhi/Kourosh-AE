@@ -143,6 +143,17 @@ class MainActivity : Activity() {
     private var transportRailHeight = 0
     private lateinit var footerWave: AuroraWaveStrip
     private lateinit var statusLed: View
+    /**
+     * The word beside the header LED.
+     *
+     * Kept as the LED's shadow rather than folded into it: [renderStatusLed] is the
+     * single painter for every state-carrying surface, and both of these are written
+     * there and nowhere else.
+     */
+    private val statusChipLabel: TextView = Aurora.label(
+        this, Strings.t("OFF"), 8.5f, MUTED,
+        face = Aurora.Face.MEDIUM, tracking = 0.14f,
+    ).apply { maxLines = 1 }
     private lateinit var mainRoot: FrameLayout
     private lateinit var pageHost: FrameLayout
     private lateinit var appUpdater: AppUpdater
@@ -197,7 +208,6 @@ class MainActivity : Activity() {
      */
     private var pendingBackupJson: String? = null
     private var settingsBackupRow: OrbitSettingsRow? = null
-    private var profileRow: OrbitSettingsRow? = null
     private var batteryRow: OrbitSettingsRow? = null
     private var manualEndpointRow: OrbitSettingsRow? = null
     private var gatewayCacheRow: OrbitSettingsRow? = null
@@ -1452,34 +1462,26 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Royal masthead: menu, the lion-crest logo, and a two-line brand lockup.
+     * The home header: the crest, the brand, and the state -- and nothing else.
      *
-     * The logo used to be stretched into a 174x48 banner slot, which letterboxed
-     * the square crest into a postage stamp. It now sits at its natural 40dp
-     * square beside the wordmark, the same lockup the splash opens with —
-     * KOUROSH-AE over PRIVATE NETWORK — so the header and the splash read as one
-     * brand instead of two. Height stays 48dp; the console margins are untouched.
-     */
-    /**
-     * The home header: the brand on the left, state and settings on the right.
-     *
-     * The previous header opened with a `☰` glyph and closed with a `⚙` one, both set
-     * as text in whatever face the device happened to resolve for those code points,
-     * and the connection LED sat in the middle of the wordmark where it read as an
-     * accent on the logo rather than as state. The lockup is now flanked by two drawn
-     * vector buttons (see [iconButton]) and the LED has its own pill on the right,
-     * beside the control it belongs to.
+     * Two versions back this row opened with a text `MENU` glyph and closed with a
+     * "settings" glyph, both set in whatever face the device resolved for those code
+     * points, with the connection LED floating between the wordmark and the buttons.
+     * The buttons are gone: settings is a destination and it lives in the dock with the
+     * other three, so the header holds only things that cannot be reached from anywhere
+     * else -- the drawn crown, the name, and a chip that names the tunnel's state.
      */
     private fun createHomeHeader(): View = LinearLayout(this).apply {
+        // No menu button and no settings button up here any more. Settings is a
+        // destination, not an action: it lives in the dock with the other three, and
+        // two extra 42dp targets in the header only crowded the crest and gave the
+        // same screen two ways in. The header is now the identity strip -- crest,
+        // wordmark, live state -- and nothing on it competes with the dial.
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         clipChildren = false
         clipToPadding = false
 
-        addView(
-            iconButton(AuroraIcon.MENU, "منوی برنامه") { openSettingsScreen() },
-            LinearLayout.LayoutParams(dp(42), dp(42)),
-        )
 
         addView(FrameLayout(this@MainActivity).apply {
             background = Aurora.panel(
@@ -1487,21 +1489,15 @@ class MainActivity : Activity() {
                 accent = Sculpt.withAlpha(primary, 0.5f),
                 lit = false,
             )
-            addView(ImageView(this@MainActivity).apply {
-                setImageResource(R.drawable.kourosh_ae_logo)
-                scaleType = ScaleType.CENTER_CROP
-                contentDescription = "Kourosh-AE"
-                // Rounded 11dp: the crest is full-bleed dark artwork, and a sharp
-                // black square reads as a hole punched in the header — on the
-                // porcelain header especially. The outline follows the view bounds,
-                // so it survives density and font-scale changes.
-                clipToOutline = true
-                outlineProvider = object : ViewOutlineProvider() {
-                    override fun getOutline(view: View, outline: Outline) {
-                        outline.setRoundRect(0, 0, view.width, view.height, dp(11).toFloat())
-                    }
-                }
-            }, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER))
+            // The crown, drawn rather than bitmapped. At 30dp the painted
+            // illustration's detail collapsed into noise, and its black plate read as
+            // a hole punched in the header on the porcelain palette. A vector mark is
+            // crisp at every density, takes the crest gold, and carries the same
+            // silhouette the notification and the quick-settings tile use.
+            addView(
+                AuroraIconView(this@MainActivity, AuroraIcon.CROWN, primaryText, strokeDp = 1.4f),
+                FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER),
+            )
         }, LinearLayout.LayoutParams(dp(42), dp(42)).apply {
             leftMargin = dp(9)
             rightMargin = dp(11)
@@ -1525,17 +1521,24 @@ class MainActivity : Activity() {
 
         addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
 
-        // The state LED in its own pill. Colour alone never carries state (the hero's
-        // pill and headline both say it in words), so this stays a small dot.
-        addView(FrameLayout(this@MainActivity).apply {
+        // The state chip: the LED and the word together. With the buttons gone this is
+        // what closes the header, and it earns the extra width -- the whole app is
+        // about the state of one tunnel, so the header says it in words and in colour
+        // instead of leaving a bare dot to be interpreted.
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(9), dp(5), dp(11), dp(5))
             background = Aurora.pill(this@MainActivity, palette, MUTED, filled = false, alpha = 0.10f)
-            addView(statusLed, FrameLayout.LayoutParams(dp(8), dp(8), Gravity.CENTER))
-        }, LinearLayout.LayoutParams(dp(30), dp(30)).apply { rightMargin = dp(9) })
-
-        addView(
-            iconButton(AuroraIcon.SETTINGS, "تنظیمات") { openSettingsScreen() },
-            LinearLayout.LayoutParams(dp(42), dp(42)),
-        )
+            addView(statusLed, LinearLayout.LayoutParams(dp(8), dp(8)))
+            addView(statusChipLabel, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { leftMargin = dp(7) })
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
     }
 
     /**
@@ -1545,40 +1548,6 @@ class MainActivity : Activity() {
      * panels' lighting, take the palette's colour, and cannot change shape between
      * devices or ROMs.
      */
-    private fun iconButton(icon: AuroraIcon, description: String, action: () -> Unit): FrameLayout =
-        FrameLayout(this).apply {
-            background = Aurora.panel(
-                this@MainActivity, palette, 15,
-                accent = Sculpt.withAlpha(MUTED, 0.35f),
-                lit = false,
-            )
-            isClickable = true
-            isFocusable = true
-            contentDescription = description
-            addView(
-                AuroraIconView(this@MainActivity, icon, INK, strokeDp = 1.8f),
-                FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER),
-            )
-            setOnClickListener {
-                performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
-                action()
-            }
-        }
-
-    /**
-     * The transport glyphs, in the rail's own order.
-     *
-     * Keyed off the enum rather than the label, so the Persian and Chinese rails get
-     * the same icons as the English one.
-     */
-    private fun railGlyph(protocol: Protocol): AuroraIcon = when (protocol) {
-        Protocol.WIREGUARD -> AuroraIcon.BOLT
-        Protocol.MASQUE -> AuroraIcon.GLOBE
-        Protocol.WARP_IN_WARP -> AuroraIcon.LAYERS
-        Protocol.PSIPHON -> AuroraIcon.SHIELD
-        Protocol.TOR -> AuroraIcon.ONION
-        Protocol.SHARD -> AuroraIcon.GAUGE
-    }
 
 
     private fun railLabel(protocol: Protocol): String = when (protocol) {
@@ -1604,6 +1573,24 @@ class MainActivity : Activity() {
             AuroraDialView.State.DISCONNECTED -> MUTED
         }
         val glow = visualState != AuroraDialView.State.DISCONNECTED
+        // The chip's word. Same accent family as the pill below it, so a glance at the
+        // header and a glance at the hero never disagree.
+        statusChipLabel.text = when (visualState) {
+            AuroraDialView.State.CONNECTED -> Strings.t("SECURE")
+            AuroraDialView.State.DEGRADED -> Strings.t("DEGRADED")
+            AuroraDialView.State.CONNECTING -> Strings.t("LINKING")
+            AuroraDialView.State.FAILED -> Strings.t("FAILED")
+            AuroraDialView.State.DISCONNECTED -> Strings.t("OFF")
+        }
+        statusChipLabel.setTextColor(
+            when (visualState) {
+                AuroraDialView.State.CONNECTED -> palette.connectedText
+                AuroraDialView.State.DEGRADED -> palette.amberText
+                AuroraDialView.State.CONNECTING -> palette.primaryText
+                AuroraDialView.State.FAILED -> palette.dangerText
+                AuroraDialView.State.DISCONNECTED -> palette.muted
+            },
+        )
         statusLed.background = Sculpt.sculptedBackground(
             resources.displayMetrics.density,
             if (glow) accent else Sculpt.withAlpha(MUTED, 0.4f),
@@ -3599,19 +3586,6 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             dp(300),
         ).apply { topMargin = dp(44) })
-        // PROFILE sits above everything, because the profile decides what every
-        // row below it means. It is the only section that rebuilds the whole
-        // page on a change, so it has to be read first and built first.
-        content.addView(expandableSection(Strings.t("PROFILE"), id = "PROFILE") { body ->
-            profileRow = navRow(Strings.t("Profile"), Profiles.activeName(this)) { chooseProfile() }
-            body.addView(profileRow, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(10) })
-        }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ))
         content.addView(expandableSection(Strings.t("PROTECTION"), id = "PROTECTION") { body ->
             body.addView(createToggleRow(Strings.t("Kill switch"), Strings.t("Block all traffic if the tunnel drops"), killSwitchEnabled()) {
                 preferences().edit().putBoolean(KILL_SWITCH, it).apply()
@@ -4196,7 +4170,14 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(8) })
-            body.addView(navRow(Strings.t("Font"), FontChoice.current(this@MainActivity).label) { openFontScreen() }, LinearLayout.LayoutParams(
+            // Text size, not font family. The family picker was a wall of sample
+            // paragraphs under a heading nobody used: the app ships one voice, and a
+            // third-party face changed the whole console's metrics. The size control is
+            // the part that actually helps someone read the screen.
+            body.addView(navRow(
+                Strings.t("Text size"),
+                "${Math.round(FontChoice.scale(this@MainActivity) * 100)}%",
+            ) { openTextSizeScreen() }, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = dp(8) })
@@ -5033,38 +5014,6 @@ class MainActivity : Activity() {
      * A device on a locale we do not translate shows English, which is what
      * "system" resolved to anyway.
      */
-    /**
-     * Picks which of the four profiles is active.
-     *
-     * Modelled on [chooseLanguage] deliberately: the same bottom sheet, the same
-     * single-tap row, the same immediate rebuild. Switching a profile changes
-     * what every row below the picker says, and recreate() is the only way to be
-     * sure none of them keeps showing the profile the user just left.
-     *
-     * Refuses while the tunnel is up, for the same reason a restore does: the
-     * running tunnel was configured by the old profile, and a hot swap would
-     * leave the UI and the tunnel disagreeing about which settings are in force.
-     */
-    private fun chooseProfile() {
-        showChoiceSheet(
-            title = Strings.t("Profile"),
-            subtitle = Strings.t("Each profile keeps its own settings. Disconnect first — the running tunnel uses the current profile's configuration."),
-            options = Profiles.NAMES.toList(),
-            selected = Profiles.NAMES[Profiles.active(this)],
-            label = { it },
-            description = { "" },
-        ) { chosen ->
-            val index = Profiles.NAMES.indexOf(chosen)
-            if (index < 0 || index == Profiles.active(this)) return@showChoiceSheet
-            if (TunnelStatus.isActive() || visualState == AuroraDialView.State.CONNECTING) {
-                toastShort(Strings.t("Disconnect first — switching profile changes what the tunnel uses"))
-                return@showChoiceSheet
-            }
-            val moved = Profiles.switch(this, index)
-            ConnectionLog.record("Switched to $chosen ($moved settings keys)")
-            recreate()
-        }
-    }
 
     private fun chooseLanguage() {
         showChoiceSheet(
@@ -6080,7 +6029,7 @@ class MainActivity : Activity() {
         trafficMonthValue = null
     }
 
-    private fun openFontScreen() {
+    private fun openTextSizeScreen() {
         fontPage?.let(pageHost::removeView)
         val page = FrameLayout(this).apply {
             setBackgroundColor(CANVAS)
@@ -6096,11 +6045,11 @@ class MainActivity : Activity() {
         }
         content.addView(LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            addView(createHeaderBackButton { closeFontScreen() }, LinearLayout.LayoutParams(dp(48), dp(48)))
-            addView(label(Strings.t("Font"), 24f, INK, TypefaceStyle.MEDIUM).apply { setPadding(dp(4), 0, 0, 0) })
+            addView(createHeaderBackButton { closeTextSizeScreen() }, LinearLayout.LayoutParams(dp(48), dp(48)))
+            addView(label(Strings.t("Text size"), 24f, INK, TypefaceStyle.MEDIUM).apply { setPadding(dp(4), 0, 0, 0) })
         })
         content.addView(label(
-            Strings.t("Choose the font used across the interface. Missing optional files use a safe system fallback."),
+            Strings.t("Scales every label in the app. The layout adjusts with it."),
             13f, MUTED,
         ), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             leftMargin = dp(4); bottomMargin = dp(16)
@@ -6120,58 +6069,13 @@ class MainActivity : Activity() {
                 }
                 override fun onStartTrackingTouch(seek: SeekBar?) = Unit
                 override fun onStopTrackingTouch(seek: SeekBar?) {
-                    closeFontScreen(); recreate()
+                    closeTextSizeScreen(); recreate()
                 }
             })
             progressTintList = android.content.res.ColorStateList.valueOf(primary)
             thumbTintList = android.content.res.ColorStateList.valueOf(primary)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)).apply { bottomMargin = dp(14) })
 
-        FontChoice.Family.entries.forEach { family ->
-            val selected = FontChoice.current(this) == family
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(18), dp(14), dp(18), dp(14))
-                isClickable = true
-                isFocusable = true
-                background = Sculpt.sculptedBackground(
-                    resources.displayMetrics.density,
-                    if (selected) Sculpt.withAlpha(primary, 0.10f) else SURFACE,
-                    16,
-                    if (selected) primary else DIVIDER,
-                )
-                setOnClickListener {
-                    FontChoice.select(this@MainActivity, family)
-                    closeFontScreen()
-                    recreate()
-                }
-            }
-            val title = TextView(this).apply {
-                text = if (family.available) family.label else "${family.label} · ${Strings.t("file not added")}" 
-                textSize = 15f
-                typeface = if (family.available) FontChoice.regular(this@MainActivity) else Typefaces.medium(this@MainActivity)
-                setTextColor(if (selected) primary else INK)
-            }
-            row.addView(title)
-            listOf(
-                "این یک متن آزمایشی با قلم انتخابی شماست",
-                "This is a test text with your selected font",
-                "Это тестовый текст выбранным вами шрифтом",
-            ).forEach { sample ->
-                row.addView(TextView(this).apply {
-                    text = sample
-                    textSize = 14f
-                    typeface = if (family.available) FontChoice.regular(this@MainActivity) else Typeface.DEFAULT
-                    setTextColor(MUTED)
-                    textDirection = View.TEXT_DIRECTION_ANY_RTL
-                    setLineSpacing(0f, if (family == FontChoice.Family.DAST_NEVIS || family == FontChoice.Family.IRAN_NASTALIQ) 1.8f else 1.25f)
-                    setPadding(0, dp(4), 0, dp(2))
-                })
-            }
-            content.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = dp(10)
-            })
-        }
         scroll.addView(content)
         page.addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         fontPage = page
@@ -6180,7 +6084,7 @@ class MainActivity : Activity() {
         animatePageOpen(page)
     }
 
-    private fun closeFontScreen() {
+    private fun closeTextSizeScreen() {
         fontPage?.let { animatePageClose(it) { fontPage = null } }
     }
 
@@ -7000,7 +6904,7 @@ class MainActivity : Activity() {
 
     private fun handleBack(): Boolean {
         when {
-            fontPage != null -> closeFontScreen()
+            fontPage != null -> closeTextSizeScreen()
             splitTunnelAppsPage != null -> closeSplitTunnelAppsScreen()
             splitTunnelPage != null -> closeSplitTunnelScreen()
             trafficMonitorPage != null -> closeTrafficMonitorScreen()
@@ -8025,7 +7929,10 @@ class MainActivity : Activity() {
         setTextColor(color)
         // Persian/Chinese ship offline fonts; see Typefaces for why per-language.
         if (AppLanguage.current() != "en") {
-            setLineSpacing(0f, Typefaces.lineHeightMult() * if (FontChoice.current(this@MainActivity) == FontChoice.Family.IRAN_NASTALIQ || FontChoice.current(this@MainActivity) == FontChoice.Family.DAST_NEVIS) 1.25f else 1f)
+            // One line box for every language now: the looser box existed because a
+            // Nastaliq face overflows its own line height, and no such face can be
+            // selected any more.
+            setLineSpacing(0f, Typefaces.lineHeightMult())
         }
         if (singleLine) {
             setSingleLine(true)
@@ -8240,8 +8147,8 @@ class MainActivity : Activity() {
     }
 
     private fun savedProtocol(): Protocol {
-        val name = preferences().getString(DEFAULT_PROTOCOL, Protocol.WIREGUARD.coreName)
-        return Protocol.entries.firstOrNull { it.coreName == name && it.androidAvailable } ?: Protocol.WIREGUARD
+        val name = preferences().getString(DEFAULT_PROTOCOL, Protocol.MASQUE.coreName)
+        return Protocol.entries.firstOrNull { it.coreName == name && it.androidAvailable } ?: Protocol.MASQUE
     }
 
 
@@ -8458,13 +8365,25 @@ class MainActivity : Activity() {
         // are built from `Protocol.entries`, so this list decides what a first-time
         // user reaches for — and the first cell is what most of them will tap.
         //
-        // WireGuard leads on purpose: it is the cheapest handshake of the six and it
-        // either works immediately or fails immediately, which is the right first
-        // move for a user who does not know what any of these words mean. MASQUE
-        // follows because it survives the carriers WireGuard is blocked on, and the
-        // one-time Auto Scan ([AUTO_SCAN_LADDER]) walks them in exactly this order.
+        // MASQUE leads on purpose. It rides HTTP/3 over UDP/443 or HTTP/2 over
+        // TCP/443 — the two ports a filtered network has to leave open — and it is the
+        // only transport here with a TLS curve preset, mixed-case SNI and handshake
+        // fragmentation of its own. On the carriers this app is built for, MASQUE is
+        // the rung that survives when WireGuard is empty-packed off the network
+        // entirely, which is exactly what happens on some Iranian mobile networks.
+        //
+        // WireGuard follows: it is the cheapest handshake of the family and either
+        // works immediately or fails immediately, so it is still the right second
+        // move. Then WARP-on-WARP (a WireGuard tunnel inside another, for networks
+        // where a single layer is fingerprinted), Psiphon (an anti-censorship client
+        // with its own ladder of obfuscated transports), Tor and SHARD.
+        //
+        // The one-time Auto Scan ([AUTO_SCAN_LADDER]) walks them in exactly this
+        // order, and the stored default protocol agrees with it — see savedProtocol(),
+        // the tile service and CoreConfig's fallback. A user who already picked a
+        // transport keeps their choice; only a fresh install starts here.
+        MASQUE("MASQUE", "masque", "HTTP/3 tunnel; hardest to filter", true),
         WIREGUARD("WireGuard", "wireguard", "WireGuard tunnel", true),
-        MASQUE("MASQUE", "masque", "HTTP/3 tunnel", true),
         WARP_IN_WARP("WARP-on-WARP", "gool", "Double-layer tunnel", true),
         PSIPHON("Psiphon", "psiphon", "Anti-censorship tunnel", true),
         TOR("Tor", "tor", "Onion routing; slowest but hardest to block", true),
@@ -8870,8 +8789,8 @@ class MainActivity : Activity() {
          * switch to something else.
          */
         val AUTO_SCAN_LADDER = listOf(
-            Protocol.WIREGUARD,
             Protocol.MASQUE,
+            Protocol.WIREGUARD,
             Protocol.WARP_IN_WARP,
             Protocol.SHARD,
         )

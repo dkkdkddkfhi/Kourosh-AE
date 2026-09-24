@@ -26,7 +26,6 @@ object Typefaces {
 
     /** The regular-weight label font for the active language. */
     fun regular(ctx: Context): Typeface {
-        if (FontChoice.current(ctx) != FontChoice.Family.SYSTEM) return FontChoice.regular(ctx)
         val lang = AppLanguage.current()
         return when (lang) {
             "fa" -> cached(ctx, R.font.vazirmatn_regular) { regular }
@@ -37,7 +36,6 @@ object Typefaces {
 
     /** Medium — the console's default label weight. */
     fun medium(ctx: Context): Typeface {
-        if (FontChoice.current(ctx) != FontChoice.Family.SYSTEM) return FontChoice.medium(ctx)
         val lang = AppLanguage.current()
         return when (lang) {
             "fa" -> cached(ctx, R.font.vazirmatn_bold) { medium }
@@ -48,7 +46,6 @@ object Typefaces {
 
     /** Bold — section headers and strong values. */
     fun bold(ctx: Context): Typeface {
-        if (FontChoice.current(ctx) != FontChoice.Family.SYSTEM) return FontChoice.medium(ctx)
         val lang = AppLanguage.current()
         return when (lang) {
             "fa" -> cached(ctx, R.font.vazirmatn_extrabold) { bold }
@@ -62,7 +59,6 @@ object Typefaces {
      * same visual punch the console's medium-weight Latin headline has.
      */
     fun extraBold(ctx: Context): Typeface {
-        if (FontChoice.current(ctx) != FontChoice.Family.SYSTEM) return FontChoice.medium(ctx)
         val lang = AppLanguage.current()
         return when (lang) {
             "fa" -> cached(ctx, R.font.vazirmatn_extrabold) { extraBold }

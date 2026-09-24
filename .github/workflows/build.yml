@@ -91,7 +91,7 @@ jobs:
       - name: Upload signed APK and Play AAB artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Kourosh-AE-v2.1.21-release
+          name: Kourosh-AE-v2.1.22-release
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
@@ -101,12 +101,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v2.1.21 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
-            gh release create v2.1.21 --repo "${{ github.repository }}" --target "${{ github.sha }}" \
-              --title 'Kourosh-AE v2.1.21' --notes 'New home screen: the Aurora console. The dial, hero panel, live traffic chart, exit node, transport grid, navigation dock and the whole visual language were rebuilt from scratch on both themes. The palace artwork and every previous home-screen component were removed; the backdrop is now drawn, so the APK is ~6 MB smaller.'
+          gh release view v2.1.22 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create v2.1.22 --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+              --title 'Kourosh-AE v2.1.22' --notes 'The crown release. A new header, a real crown on the notification, fewer controls in the way, and two stability fixes.\n\nNew: the home header is now the crest crown drawn as a vector, the wordmark, and a state chip that names the tunnel's state next to its LED. The menu and settings buttons are gone from the header \u2014 settings lives in the dock with the other destinations. The notification and quick-settings tile carry a proper royal crown: five points, a bezel band and pearls, one white silhouette that stays crisp at status-bar size, replacing the crown-on-shield-on-core mark that read as a smudge. The expanded notification badge is the same crown in gold on the app plate.\n\nFaster and harder to filter: MASQUE leads the transport rail and is the default for a fresh install. It rides HTTP/3 over UDP/443 (falling back to HTTP/2 over TCP/443 with handshake fragmentation), which is the hardest of the transports here to block. WireGuard, WARP-on-WARP, Psiphon, Tor and SHARD follow, and Auto Scan walks the same order. A transport you already chose is kept.\n\nStability: a connected tunnel is no longer torn down and reconnected after about a minute of no downstream traffic \u2014 the liveness watchdog now waits five minutes before it suspects a healthy session, so a phone sitting on a chat screen stops looking like a dropped tunnel. The tunnel also survives a swipe out of the recents list (stopWithTask=false); the recents swipe is no longer a way to lose a working session by accident.\n\nSimpler: the profile picker and the font-family picker are gone. The app ships one voice on the system face, and Appearance keeps a text-size control, which is the part that helps readability.\n\nA note on the install warning: this APK is signed with this project's own release key, and Google Play Protect warns about any sideloaded app from a developer it has not verified \u2014 that warning is about the distributor, not about this file. It is the same warning as previous releases; nothing in the APK can turn it off. Verify the SHA-256 published with the release if you want to be sure of the download.'
       - name: Publish signed APK and AAB to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload v2.1.21 app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab \
+          gh release upload v2.1.22 app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab \
             --repo "${{ github.repository }}" --clobber

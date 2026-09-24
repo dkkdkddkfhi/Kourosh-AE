@@ -604,6 +604,7 @@ enum class AuroraIcon {
     LINK,
     GAUGE,
     ONION,
+    CROWN,
 }
 
 /** A vector icon tinted by the palette. [stroke] is in dp. */
@@ -788,6 +789,39 @@ class AuroraIconView(
                 canvas.drawCircle(cx, cy, 8.4f * k, paint)
                 canvas.drawCircle(cx, cy, 5.4f * k, paint)
                 canvas.drawCircle(cx, cy, 2.4f * k, paint)
+            }
+            AuroraIcon.CROWN -> {
+                // A royal crown on the same 24x24 grid as every other mark: a band with
+                // three gems, five tapering points, and a bezel across the base. Drawn
+                // as outlines so it takes the palette's gold and reads at 18-24dp --
+                // the painted illustration it replaced turned to mush at header size
+                // and could not be tinted at all.
+                val band = y(15.6f)
+                canvas.drawLine(x(3.6f), band, x(20.4f), band, paint)
+                canvas.drawLine(x(4.6f), y(19.4f), x(19.4f), y(19.4f), paint)
+                canvas.drawLine(x(3.6f), band, x(4.6f), y(19.4f), paint)
+                canvas.drawLine(x(20.4f), band, x(19.4f), y(19.4f), paint)
+                // Five points, tallest in the middle. Flat arrays rather than a data
+                // class: Kotlin only destructures up to five components.
+                val peaks = arrayOf(
+                    floatArrayOf(3.6f, band, 4.9f, 8.2f, 6.6f, band),
+                    floatArrayOf(6.6f, band, 8.6f, 6.0f, 10.4f, band),
+                    floatArrayOf(10.4f, band, 12f, 4.4f, 13.6f, band),
+                    floatArrayOf(13.6f, band, 15.4f, 6.0f, 17.4f, band),
+                    floatArrayOf(17.4f, band, 19.1f, 8.2f, 20.4f, band),
+                )
+                peaks.forEach { peak ->
+                    val path = Path().apply {
+                        moveTo(x(peak[0]), y(peak[1]))
+                        lineTo(x(peak[2]), y(peak[3]))
+                        lineTo(x(peak[4]), y(peak[5]))
+                    }
+                    canvas.drawPath(path, paint)
+                }
+                // The gems sit on the band, one under each point that meets it.
+                canvas.drawCircle(x(6.6f), y(17.4f), 1.05f * k, paint)
+                canvas.drawCircle(x(12f), y(17.4f), 1.05f * k, paint)
+                canvas.drawCircle(x(17.4f), y(17.4f), 1.05f * k, paint)
             }
         }
     }

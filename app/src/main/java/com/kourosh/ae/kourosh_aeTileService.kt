@@ -183,7 +183,7 @@ class KouroshAeTileService : TileService() {
     private fun configJson(): String {
         val prefs = getSharedPreferences(SETTINGS, MODE_PRIVATE)
         val armed = prefs.getBoolean(CHAIN_ARMED, CHAIN_ARMED_DEFAULT)
-        val picked = prefs.getString(DEFAULT_PROTOCOL, Protocol.WIREGUARD.coreName)
+        val picked = prefs.getString(DEFAULT_PROTOCOL, Protocol.MASQUE.coreName)
         // Same rule as the main screen: this marker is Psiphon's, so it only applies
         // when Psiphon is the selected transport.
         return if (armed && picked == Protocol.PSIPHON.coreName) {
@@ -279,12 +279,12 @@ class KouroshAeTileService : TileService() {
             val coreName: String,
             val enDescription: String,
         ) {
-            // Order mirrors MainActivity.Protocol — WireGuard first. Nothing here is
-            // laid out from the order, but the two enums are read as one list by
-            // anyone maintaining them, and the tile's default is the first entry's
-            // sibling on the main screen.
+            // Order mirrors MainActivity.Protocol — MASQUE first, for the same reasons
+            // documented there. Nothing here is laid out from the order, but the two
+            // enums are read as one list by anyone maintaining them, and the tile's
+            // default is the first entry's sibling on the main screen.
+            MASQUE("MASQUE", "masque", "HTTP/3 tunnel; hardest to filter"),
             WIREGUARD("WireGuard", "wireguard", "WireGuard tunnel"),
-            MASQUE("MASQUE", "masque", "HTTP/3 tunnel"),
             WARP_IN_WARP("WARP-on-WARP", "gool", "Double-layer tunnel"),
             PSIPHON("Psiphon", "psiphon", "SOCKS5 proxy tunnel"),
             TOR("Tor", "tor", "Onion routing"),

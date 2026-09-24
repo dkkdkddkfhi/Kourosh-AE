@@ -10,32 +10,26 @@ object FontChoice {
     private const val KEY = "family"
     private const val SCALE_KEY = "text_scale"
 
+    /**
+     * The one voice the interface speaks in.
+     *
+     * The family picker is gone: eleven faces, six of which were never shipped, and a
+     * sample-paragraph wall that changed the whole console's metrics when it was used.
+     * Custom families are not merely unpicked, they are refused — [current] always
+     * answers [Family.SYSTEM], so an old install that had chosen Dast Nevis comes back
+     * on the system face with no migration step, and no later caller can reintroduce a
+     * third-party face by accident. The size control is kept: that one is accessibility,
+     * not decoration.
+     */
     enum class Family(val key: String, val label: String, val resource: Int?) {
         SYSTEM("system", "System default", null),
-        YEKAN("yekan", "Yekan", null),
-        YEKAN_BOLD("yekan_bold", "Yekan Bold", null),
-        YEKAN_BOOM("yekan_boom", "Yekan Boom", null),
-        DAST_NEVIS("dast_nevis", "Dast Nevis", null),
-        IRAN_NASTALIQ("iran_nastaliq", "Iran Nastaliq", null),
-        IRANIAN_SANS("iranian_sans", "Iranian Sans", null),
-        VAZIRMATN("vazirmatn", "Vazirmatn", R.font.vazirmatn_regular),
-        VAZIRMATN_BOLD("vazirmatn_bold", "Vazirmatn Bold", R.font.vazirmatn_bold),
-        NOTO_SANS("noto_sans", "Noto Sans", R.font.noto_sc_regular),
-        NOTO_SANS_MEDIUM("noto_sans_medium", "Noto Sans Medium", R.font.noto_sc_medium),
         ;
 
         val available: Boolean get() = resource != null
     }
 
-    fun current(context: Context): Family {
-        val key = context.profiled().getString(KEY, Family.SYSTEM.key)
-        return Family.entries.firstOrNull { it.key == key } ?: Family.SYSTEM
-    }
-
-    fun select(context: Context, family: Family) {
-        context.profiled().edit().putString(KEY, family.key).apply()
-    }
-
+    /** Always the system face. See [Family]. */
+    fun current(context: Context): Family = Family.SYSTEM
     fun scale(context: Context): Float = context.profiled().getFloat(SCALE_KEY, 1f).coerceIn(0.9f, 1.3f)
 
     fun setScale(context: Context, value: Float) {

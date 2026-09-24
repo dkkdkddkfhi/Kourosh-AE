@@ -107,9 +107,9 @@ object CoreConfig {
             put("config_path", File(context.filesDir, "aether.toml").absolutePath)
             // Fallback must match MainActivity's `savedProtocol()` and the tile's
             // default. This is the value used before the user has ever picked
-            // anything, i.e. on a first connect — and WireGuard now leads the rail,
-            // so a disagreement here would build a MASQUE config under a UI showing
-            // WireGuard selected.
+            // anything, i.e. on a first connect — and MASQUE leads the rail, so a
+            // disagreement here would build a WireGuard config under a UI showing
+            // MASQUE selected.
             // Masque-over-masque: when the user armed the second hop, a MASQUE
             // connect becomes a MIM connect. Rewritten here rather than by the
             // callers so the tile, the dial and a quick reconnect cannot miss
@@ -117,12 +117,12 @@ object CoreConfig {
             // the callers, but this one is a pure function of the MASQUE
             // selection, so it belongs with the selection.
             val effectiveProtocol = if (
-                (protocol ?: text("default_protocol", "wireguard")) == "masque" &&
+                (protocol ?: text("default_protocol", "masque")) == "masque" &&
                 mimArmed(context)
             ) {
                 MIM_PROTOCOL
             } else {
-                protocol ?: text("default_protocol", "wireguard")
+                protocol ?: text("default_protocol", "masque")
             }
             put("protocol", effectiveProtocol)
             // Where the core's own SOCKS listener goes.

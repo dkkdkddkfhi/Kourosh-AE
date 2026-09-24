@@ -20,6 +20,16 @@
 
 Open **Actions → Kourosh-AE Android Build → Artifacts** and download `Kourosh-AE-debug-apks`. The workflow builds installable Debug APKs for arm64, armv7, and x86_64 without requiring a private signing key.
 
+### About the "app is not safe" warning at install time
+
+Android shows a **Play Protect** warning for every APK installed from outside Google Play when the publisher has not been verified. The warning is about *who distributes the file*, not about the file itself. From 2026 Google requires developer verification for APKs on certified devices, so every release downloaded from GitHub shows it, and nothing inside the APK can turn it off.
+
+Releases here are signed with this project's own release key. To be sure of a download:
+
+1. Each release lists the `SHA-256` of every APK; compare it with `sha256sum` on the file you downloaded.
+2. Choose **Install anyway** in the Play Protect dialog.
+3. To have Play Protect scan the file instead, turn **Scan apps with Play Protect** off in the Play Store settings before installing.
+
 ## Build locally
 
 Requirements: JDK 17, Android SDK 36, NDK `26.3.11579264`, CMake `3.22.1`, and stable Rust.

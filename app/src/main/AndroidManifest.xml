@@ -100,6 +100,18 @@
             android:foregroundServiceType="specialUse"
             android:permission="android.permission.BIND_VPN_SERVICE">
             <!--
+              stopWithTask=false: swiping the app off the recents list must not take
+              the tunnel down. The default is true for services, which is one of the
+              ways a user loses a working session without touching a button. The app
+              has its own Disconnect action in the notification and in the dial, so
+              the recents swipe has no business meaning "stop".
+
+              No onTaskRemoved() in the service either, for the same reason: the only
+              thing it could usefully do is re-post the notification, and it cannot be
+              called at all once this attribute is false.
+            -->
+            android:stopWithTask="false"
+            <!--
               Declared subtype is required by Play review for specialUse; it has
               no effect at runtime, but leaving it out gets the upload rejected.
             -->

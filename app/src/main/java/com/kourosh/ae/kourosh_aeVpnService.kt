@@ -936,15 +936,21 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
         const val IRAN_BYPASS_PREF = "iran_bypass"
         /**
          * Watchdog ticks a native core tunnel (MASQUE/WireGuard/WoW) may stay
-         * byte-silent while the screen is ON before the watchdog tears it
-         * down and reconnects. 2 strikes × 30 s = the tunnel gets one full
-         * minute of screen-on silence before any action — a healthy session
-         * that is merely between requests survives easily, while a
-         * handshake-only tunnel is replaced instead of sitting green.
+         * byte-silent while the screen is ON before the watchdog tears it down and
+         * reconnects.
+         *
+         * 10 strikes x 30 s = five minutes of screen-on silence. It was two ticks,
+         * i.e. one minute, and that was the "it cuts out after two minutes" report:
+         * a phone sitting on a chat screen or a paused video moves no downstream
+         * bytes for far longer than a minute, so the watchdog was tearing down
+         * perfectly good sessions and reconnecting them on its own. The cost of
+         * waiting five minutes is that a genuinely dead tunnel is replaced later
+         * than before; the cost of one minute was that the app looked unstable
+         * during ordinary use. The tunnel-died case is still caught sooner by the
+         * checks above this one (process gone, radio gone), and any byte at all
+         * resets the count.
          */
-        private const val NATIVE_STRIKES_BEFORE_RECONNECT = 2
-
-        /** How often the liveness watchdog checks an established tunnel. */
+        private const val NATIVE_STRIKES_BEFORE_RECONNECT = 10
         private const val WATCHDOG_INTERVAL_S = 30L
 
         /** Auto-reconnect backoff in seconds; the last entry repeats forever. */
@@ -5464,18 +5470,20 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
     }
 
     /**
-     * The app's launcher artwork as a round, full-colour notification badge.
+     * The crest crown as a round, full-colour notification badge.
      *
-     * Rendered here rather than handed to the system as
-     * `Icon.createWithResource(R.mipmap.ic_launcher)` because that resource is an
-     * adaptive icon: launchers apply a mask to it, but `setLargeIcon` does not,
-     * so on several OEM shells it lands as an unmasked square with the
-     * background plate showing at the corners. Compositing background+foreground
-     * into a circular bitmap ourselves gives the same round badge on every
-     * device.
+     * Drawn from the app's own vector crown instead of the launcher artwork: the
+     * illustration was authored for a 108dp adaptive-icon canvas, so at badge size it
+     * was cropped, muddy and unrelated to the crown in the status bar. This is the same
+     * silhouette at two sizes.
      *
-     * Cached: this is a 128 px bitmap draw, and rebuilding it on every repost
-     * would be pure waste on a row that is posted for hours.
+     * Rendered here rather than handed to the system as a resource because
+     * `setLargeIcon` does not apply the launcher's mask: on several OEM shells a raw
+     * resource lands as an unmasked square. Compositing into a circular bitmap ourselves
+     * gives the same round badge everywhere.
+     *
+     * Cached: this is a bitmap draw of a few hundred pixels a side, and rebuilding it on
+     * every repost would be pure waste on a row that stays up for hours.
      */
     private fun appBadge(): android.graphics.drawable.Icon {
         cachedBadge?.let { return it }
@@ -5491,17 +5499,14 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
         }
         canvas.clipPath(clip)
 
-        // Adaptive-icon geometry: the artwork is authored on a 108dp canvas of
-        // which the inner 72dp is the guaranteed-visible area, i.e. the layers
-        // are drawn 1.5x oversized and centred. Reproducing that scale is what
-        // keeps the neon ring from being cropped.
-        val inset = (-size * 0.25f).toInt()
-        val bounds = android.graphics.Rect(inset, inset, size - inset, size - inset)
-        listOf(R.drawable.kourosh_ae_logo).forEach { id ->
-            getDrawable(id)?.apply {
-                setBounds(bounds)
-                draw(canvas)
-            }
+        // Full-bleed, not adaptive-icon geometry any more. The artwork this used to
+        // draw was 1.5x oversized because it came from an adaptive icon with its own
+        // safe area; the crown is authored on its own 96dp canvas and fills it, so the
+        // old inset would now shrink it into a dot inside the circle.
+        getDrawable(R.drawable.ic_kourosh_crown_large)?.apply {
+            setBounds(0, 0, size, size)
+            draw(canvas)
+        }
         }
         return android.graphics.drawable.Icon.createWithBitmap(bitmap)
             .also { cachedBadge = it }
