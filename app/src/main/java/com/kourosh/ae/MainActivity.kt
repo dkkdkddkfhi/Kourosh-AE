@@ -14,6 +14,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.Paint
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -31,6 +32,7 @@ import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.view.Window
 import android.view.WindowInsetsController
 import android.view.WindowManager
@@ -72,6 +74,35 @@ class MainActivity : Activity() {
     private lateinit var chipLatency: TextView
     private lateinit var chipProtocol: TextView
     private var homeLiveSpeed: TextView? = null
+    /**
+     * Session totals under the rate tiles ("↓ 412 MB · ↑ 96 MB").
+     *
+     * The tiles themselves show live rates (see [renderHomeMetrics]), so the
+     * cumulative counters live here instead of disappearing. Nullable like
+     * [homeLiveSpeed]: the metrics ticker can fire before the console exists.
+     */
+    private var homeTotalsLine: TextView? = null
+    /**
+     * The home stage panel, kept so the connected glow theme can repaint it.
+     *
+     * Nullable like [stageStatusPill]: [renderStatusLed] runs from paths that
+     * can fire before the first layout, and the glow paint must survive that.
+     */
+    private var homeStage: LinearLayout? = null
+    /** Palace backdrop (dark theme only) — faded brighter while connected. */
+    private var homeBackdropView: ImageView? = null
+    /** Tracks the backdrop fade so connecting broadcasts don't restart it. */
+    private var homeBackdropLit = false
+
+    /**
+     * The state pill at the top of the home stage.
+     *
+     * Null until the console is built, and the renderer below is null-safe on
+     * purpose: [renderStatusLed] also runs from paths that can fire before the
+     * first layout (a broadcast landing during onCreate), and the header LED must
+     * still be painted in that case.
+     */
+    private var stageStatusPill: TextView? = null
     private lateinit var tileDown: MetricTile
     private lateinit var tileUp: MetricTile
     private lateinit var tileSpeed: MetricTile
@@ -105,7 +136,6 @@ class MainActivity : Activity() {
     private var transportRailHeight = 0
     private lateinit var footerWave: OrbitFooterWave
     private lateinit var statusLed: View
-    private var proConnectShield: ProConnectShieldView? = null
     private lateinit var mainRoot: FrameLayout
     private lateinit var pageHost: FrameLayout
     private lateinit var appUpdater: AppUpdater
@@ -198,6 +228,45 @@ class MainActivity : Activity() {
             if (sessionStartedAt == 0L || !uiForeground) return
             orbitDial.timerText = formatUptime(android.os.SystemClock.elapsedRealtime() - sessionStartedAt)
             sessionHandler.postDelayed(this, 1_000L)
+        }
+    }
+    /**
+     * Connect-progress estimator: the "how much is left" percent while turning on.
+     *
+     * Only Tor reports a real number (bootstrap 1..99); every other transport
+     * used to show the spinner alone, so a 20-second MASQUE scan looked exactly
+     * like a stuck one. The estimator fills that gap with a hyperbolic climb
+     * toward 95% — fast at first, then deliberately asymptotic, because the
+     * last 5% belongs to the tunnel actually coming up and claiming 99% on a
+     * still-dead link would be a lie. A real percent always wins: any broadcast
+     * carrying one stops the estimator (see [showConnectionProgress]).
+     *
+     * Paints two slots the dial already owns: [OrbitDialView.progressPercent]
+     * (the "CONNECTING 87%" caption) and the status detail line. Unlike the
+     * session timer it is NOT gated on [uiForeground] — it lives for seconds,
+     * not hours, so keeping it ticking while backgrounded costs nothing and the
+     * number is current when the user comes back.
+     */
+    private val connectEstimatorHandler = Handler(Looper.getMainLooper())
+    private var connectEstimatorStart = 0L
+    private var connectEstimatorRunning = false
+    private var connectingDetailBase = ""
+    private val connectEstimatorTick = object : Runnable {
+        override fun run() {
+            if (isFinishing || isDestroyed) {
+                connectEstimatorRunning = false
+                return
+            }
+            if (!connectEstimatorRunning || visualState != OrbitDialView.State.CONNECTING) return
+            val elapsed = android.os.SystemClock.elapsedRealtime() - connectEstimatorStart
+            val est = (95.0 * elapsed / (elapsed + 6000.0)).toInt().coerceIn(0, 95)
+            if (est > orbitDial.progressPercent) {
+                orbitDial.progressPercent = est
+                if (connectingDetailBase.isNotEmpty()) {
+                    connectionDetail.text = "$connectingDetailBase · $est%"
+                }
+            }
+            connectEstimatorHandler.postDelayed(this, 300L)
         }
     }
     private val autoPingHandler = Handler(Looper.getMainLooper())
@@ -628,13 +697,15 @@ class MainActivity : Activity() {
         chipProtocol.text = selectedProtocol.label.uppercase()
         // One accent per tile, as in the approved mock: download mint, upload
         // violet, speed amber. They were all `primary` before, which is why every
-        // sparkline looked identical.
+        // sparkline looked identical. Captions are the full words from the royal
+        // mock (DOWNLOAD / UPLOAD) rather than arrows: the arrows now live on the
+        // totals strip, where they qualify cumulative counters, not live rates.
         tileDown = MetricTile(
-            this, palette, Strings.t("↓ DOWN"),
+            this, palette, Strings.t("DOWNLOAD"),
             palette.mint, Sculpt.lighten(palette.mint, 0.30f), palette.mintText,
         ) { openTrafficMonitorScreen() }
         tileUp = MetricTile(
-            this, palette, Strings.t("↑ UP"),
+            this, palette, Strings.t("UPLOAD"),
             palette.violet, Sculpt.lighten(palette.violet, 0.30f), palette.violetText,
         ) { openTrafficMonitorScreen() }
         tileSpeed = MetricTile(
@@ -680,17 +751,36 @@ class MainActivity : Activity() {
                 else -> android.view.View.LAYOUT_DIRECTION_LTR
             }
         }
+        // Royal backdrop, dark theme only: the palace artwork at 14% fills the home
+        // screen behind the console, with a scrim over it so the sculpted panels
+        // keep their contrast. 14%, not the old hero's 28%: under a full column
+        // of glass panels the image is atmosphere, and anything stronger reads as
+        // dirt on the glass. The light theme skips it entirely — a night photo
+        // behind white porcelain cards would fight the page instead of warming it.
+        // Added before the console/header/nav below so it sits at the back.
+        if (palette.lighting != Sculpt.LIGHT_LIGHTING) {
+            homeBackdropView = ImageView(this).apply {
+                setImageResource(R.drawable.kourosh_palace_cars_bg)
+                scaleType = ScaleType.CENTER_CROP
+                alpha = 0.14f
+                contentDescription = null
+            }
+            mainRoot.addView(homeBackdropView, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+            mainRoot.addView(View(this).apply {
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(Color.argb(150, 2, 5, 8), Color.argb(205, 2, 5, 8)),
+                )
+            }, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+        }
         val header = createHeader()
         val console = createProHomeConsole()
-        mainRoot.addView(ImageView(this).apply {
-            setImageResource(R.drawable.kourosh_palace_cars_bg)
-            scaleType = ScaleType.CENTER_CROP
-            alpha = 0.28f
-            contentDescription = null
-        }, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        ))
         // The console can still scroll, but it is meant not to need it: the dial
         // shrinks first (see [fitConsoleToViewport]) and scrolling is only the
         // last resort on a screen too short even for the smallest dial. Clipping
@@ -806,6 +896,7 @@ class MainActivity : Activity() {
         // be cancelled by hand. The dial's own animators already stop in
         // onDetachedFromWindow.
         sessionHandler.removeCallbacks(sessionTicker)
+        connectEstimatorHandler.removeCallbacks(connectEstimatorTick)
         autoPingHandler.removeCallbacks(autoPingRunnable)
         ipRetryHandler.removeCallbacks(ipRetryRunnable)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -1326,11 +1417,12 @@ class MainActivity : Activity() {
                 return@postDelayed
             }
             ConnectionLog.record("Tunnel moved no bytes in ${BYTE_WATCH_MS / 1000}s — reporting degraded")
-            visualState = OrbitDialView.State.DEGRADED
-            orbitDial.state = OrbitDialView.State.DEGRADED
-            connectionTitle.setTextColor(AMBER_TEXT)
+            // Through showDegraded, not a hand paint: the hand version left the
+            // headline on "Connected", the footer wave lit and the last latency
+            // on the chip while the dial already said degraded. The guard inside
+            // always passes here — visualState is CONNECTED two checks above.
+            showDegraded()
             connectionDetail.text = Strings.t("Tunnel is up but no traffic is passing")
-            renderStatusLed()
         }, BYTE_WATCH_MS)
     }
 
@@ -1363,6 +1455,15 @@ class MainActivity : Activity() {
         showConnectionProgress(Strings.t("Verifying"), Strings.t("Checking that traffic really passes"))
     }
 
+    /**
+     * Royal masthead: menu, the lion-crest logo, and a two-line brand lockup.
+     *
+     * The logo used to be stretched into a 174x48 banner slot, which letterboxed
+     * the square crest into a postage stamp. It now sits at its natural 40dp
+     * square beside the wordmark, the same lockup the splash opens with —
+     * KOUROSH-AE over PRIVATE NETWORK — so the header and the splash read as one
+     * brand instead of two. Height stays 48dp; the console margins are untouched.
+     */
     private fun createHeader(): LinearLayout = LinearLayout(this).apply {
         gravity = Gravity.CENTER_VERTICAL
         addView(label("☰", 28f, primary, TypefaceStyle.MEDIUM).apply {
@@ -1374,12 +1475,37 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(dp(48), dp(48)))
         addView(ImageView(this@MainActivity).apply {
             setImageResource(R.drawable.kourosh_ae_logo)
-            scaleType = ScaleType.CENTER_INSIDE
+            scaleType = ScaleType.CENTER_CROP
             contentDescription = "Kourosh-AE"
-        }, LinearLayout.LayoutParams(dp(174), dp(48)).apply {
+            // Rounded 12dp: the crest is full-bleed dark artwork, and a sharp
+            // black square reads as a hole punched in the header — on the white
+            // Porcelain header especially. The outline follows the view bounds,
+            // so it survives density and font-scale changes.
+            clipToOutline = true
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) {
+                    outline.setRoundRect(0, 0, view.width, view.height, dp(12).toFloat())
+                }
+            }
+        }, LinearLayout.LayoutParams(dp(40), dp(40)).apply {
             leftMargin = dp(2)
-            rightMargin = dp(8)
+            rightMargin = dp(10)
         })
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(label("KOUROSH-AE", 16f, primary, TypefaceStyle.MEDIUM).apply {
+                letterSpacing = spacing(0.12f)
+                maxLines = 1
+            })
+            addView(label(Strings.t("PRIVATE NETWORK"), 8.5f, MUTED, TypefaceStyle.MEDIUM).apply {
+                letterSpacing = spacing(0.18f)
+                maxLines = 1
+            })
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { rightMargin = dp(8) })
         statusLed.layoutParams = LinearLayout.LayoutParams(dp(7), dp(7)).apply {
             rightMargin = dp(7)
         }
@@ -1409,7 +1535,6 @@ class MainActivity : Activity() {
 
     /** Status LED colour + glow for the header chip. */
     private fun renderStatusLed() {
-        proConnectShield?.state = visualState
         val (fill, glow) = when (visualState) {
             OrbitDialView.State.CONNECTED -> connected to true
             OrbitDialView.State.DEGRADED -> palette.amber to true
@@ -1423,6 +1548,117 @@ class MainActivity : Activity() {
             999,
             accent = if (glow) Sculpt.lighten(fill, 0.4f) else null,
         )
+        // The stage pill says the same thing in words, so state is never carried
+        // by the dial's colour alone. Text takes the *Text sibling of each accent
+        // — the vivid values are 3-4:1 on a light card, which is fine for a ring
+        // and under the floor for letters.
+        //
+        // One outline colour, passed as the accent: GlassDrawable prefers accent
+        // over stroke, and the accent is also what drives the bloom. Passing a
+        // dim accent beside a brighter stroke produced a dimmer frame while
+        // active than while idle, which is backwards.
+        val pill = stageStatusPill ?: return
+        pill.text = when (visualState) {
+            OrbitDialView.State.CONNECTED -> Strings.t("Connected")
+            OrbitDialView.State.DEGRADED -> Strings.t("Connection degraded")
+            OrbitDialView.State.CONNECTING -> Strings.t("Connecting")
+            OrbitDialView.State.FAILED -> Strings.t("Connection failed")
+            OrbitDialView.State.DISCONNECTED -> Strings.t("Not connected")
+        }
+        pill.setTextColor(
+            when (visualState) {
+                OrbitDialView.State.CONNECTED -> palette.connectedText
+                OrbitDialView.State.DEGRADED -> palette.amberText
+                OrbitDialView.State.CONNECTING -> palette.primaryText
+                OrbitDialView.State.FAILED -> palette.dangerText
+                OrbitDialView.State.DISCONNECTED -> palette.muted
+            },
+        )
+        pill.background = Sculpt.sculptedBackground(
+            resources.displayMetrics.density,
+            Sculpt.recess(palette.surface, 0.25f),
+            999,
+            accent = if (glow) {
+                Sculpt.withAlpha(fill, 0.55f)
+            } else {
+                Sculpt.withAlpha(MUTED, 0.35f)
+            },
+        )
+        renderConnectedTheme()
+    }
+
+    /**
+     * The connected glow theme: the whole console lights up with the tunnel.
+     *
+     * This is what makes CONNECTED feel like a different place rather than the
+     * same screen with a green dial. The stage frame takes the state accent at
+     * full glow and its fill lifts; the metric tiles undim (they idle at 55%);
+     * the live-speed readout takes the state accent; and on the dark theme the
+     * palace backdrop fades brighter. Everything reverts the moment the state
+     * leaves CONNECTED/DEGRADED, because a glow that outlives the tunnel is a lie.
+     *
+     * Runs from [renderStatusLed], so it paints on every state change including
+     * the dozen CONNECTING broadcasts of one attempt — every branch is
+     * idempotent except the backdrop fade, which is transition-guarded.
+     */
+    private fun renderConnectedTheme() {
+        val state = visualState
+        val lit = state == OrbitDialView.State.CONNECTED || state == OrbitDialView.State.DEGRADED
+        val density = resources.displayMetrics.density
+        homeStage?.background = Sculpt.sculptedBackground(
+            density,
+            if (lit) {
+                Sculpt.blend(palette.surface, palette.primary, 0.07f)
+            } else {
+                Sculpt.blend(palette.surface, palette.ink, 0.04f)
+            },
+            28,
+            accent = Sculpt.withAlpha(
+                when (state) {
+                    OrbitDialView.State.CONNECTED -> palette.connected
+                    OrbitDialView.State.DEGRADED -> palette.amber
+                    OrbitDialView.State.CONNECTING -> palette.primary
+                    else -> palette.neonBlue
+                },
+                when (state) {
+                    OrbitDialView.State.CONNECTED, OrbitDialView.State.DEGRADED -> 0.8f
+                    OrbitDialView.State.CONNECTING -> 0.65f
+                    else -> 0.5f
+                },
+            ),
+        )
+        // Lateinit guard: this runs pre-layout (see stageStatusPill), so the
+        // tiles may not exist yet on the very first paint.
+        if (::tileDown.isInitialized) {
+            tileDown.dim(lit)
+            tileUp.dim(lit)
+            tileSpeed.dim(lit)
+        }
+        homeLiveSpeed?.setTextColor(
+            when (state) {
+                OrbitDialView.State.CONNECTED -> palette.connectedText
+                OrbitDialView.State.DEGRADED -> palette.amberText
+                else -> MUTED
+            },
+        )
+        if (homeBackdropLit != lit) {
+            homeBackdropLit = lit
+            homeBackdropView?.animate()?.alpha(if (lit) 0.22f else 0.14f)?.setDuration(400L)?.start()
+        }
+    }
+
+    private fun startConnectEstimator(detailBase: String) {
+        connectingDetailBase = detailBase
+        if (connectEstimatorRunning) return
+        connectEstimatorRunning = true
+        connectEstimatorStart = android.os.SystemClock.elapsedRealtime()
+        connectEstimatorHandler.post(connectEstimatorTick)
+    }
+
+    private fun stopConnectEstimator() {
+        connectEstimatorRunning = false
+        connectingDetailBase = ""
+        connectEstimatorHandler.removeCallbacks(connectEstimatorTick)
     }
 
     /**
@@ -1510,9 +1746,15 @@ class MainActivity : Activity() {
         val nav = FrameLayout(this).apply {
             clipChildren = false
             clipToPadding = false
+            // Palette-driven, not the near-black this used to be. The bar's labels
+            // and glyphs are ink-coloured, so on the Porcelain theme a #03070C
+            // pill put near-black text on near-black: the whole navigation was
+            // unreadable in the light theme. Blending the canvas towards the
+            // surface keeps the dark theme's look (both are near-black there) and
+            // gives the light theme a white bar on its grey page.
             background = Sculpt.sculptedBackground(
                 resources.displayMetrics.density,
-                Color.argb(225, 3, 7, 12),
+                Sculpt.blend(palette.canvas, palette.surface, 0.88f),
                 24,
                 stroke = Sculpt.withAlpha(primary, 0.36f),
             )
@@ -1573,364 +1815,364 @@ class MainActivity : Activity() {
     }
 
     /**
-     * Native recreation of the ZIP reference: a live hero, one horizontal connect
-     * action, then the compact metrics/IP/protocol stack. The old circular dial is
-     * intentionally not placed here; its state is still kept for compatibility with
-     * the existing status renderer, while this button is the user-facing action.
+     * The home console: one stage that answers "am I connected", then the facts.
+     *
+     * ## Why it was rebuilt
+     *
+     * The screen used to be a full-bleed photo hero with four things stacked on
+     * top of the same busy image — a wordmark, a server badge, the dial and the
+     * status block — followed by a tagline, a ping/speed bar, three tiles, the
+     * exit card, the transport rail, the chain card and a lit "SECURE CONNECTION"
+     * panel. Nothing in that stack said which part was the connection and which
+     * part was decoration, the status line sat *under* the control that changes
+     * it, and the security panel advertised facts ("No logs · No limits · Full
+     * privacy") the core had never reported.
+     *
+     * ## The new composition
+     *
+     * One reading order, top to bottom, each band answering exactly one question:
+     *
+     *  1. **STAGE** — a sculpted panel with a lit gold frame. State pill and live
+     *     throughput above the dial, headline and detail below it, ping and
+     *     transport closing it in gold-lit pills. Everything needed to answer "is
+     *     the tunnel up, on what, and how fast" sits inside one object, so the eye
+     *     never has to compare two unrelated bands to get one answer.
+     *  2. **METRICS** — live rates (download / upload / combined) as waveform
+     *     tiles, with the session totals on one line beneath them.
+     *  3. **EXIT NODE** — the address the tunnel is really leaving from.
+     *  4. **TRANSPORT** — the picker under a SELECT PROTOCOL caption, locked
+     *     while a tunnel is up.
+     *  5. The one applicable chain / split / MIM card, in a fixed-height slot.
+     *  6. The signal trace that closes the screen.
+     *
+     * ## What is gone, and why
+     *
+     *  - the wordmark: the brand lives on the launcher icon, the splash and the
+     *    header, not floating over the connect control;
+     *  - the "SERVER / Automatic" badge: it was not a fact — the exit card below
+     *    states the real exit, and "Automatic" described a preference, not a
+     *    server;
+     *  - the "PRIVATE NETWORK · LUXURY SECURE" tagline: marketing copy in the one
+     *    place the app has to behave like a tool;
+     *  - the security panel: an app may not advertise privacy before the core has
+     *    reported anything. State is carried by the dial, the pill and the
+     *    headline, which all read the same source.
+     *
+     * ## Height budget
+     *
+     * The stage keeps the dial at the hero's 250dp box — a redesign must not
+     * shrink the one control the user came for — and pays for it by deleting the
+     * bands that sat *around* it: the tagline, the ping/speed bar and the
+     * security panel are ~150dp of column that no longer exists. That matters
+     * because [fitConsoleToViewport] can only shrink the dial, so every dp spent
+     * on decoration above it is a dp taken off the control itself.
      */
     private fun createProHomeConsole(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER_HORIZONTAL
-        setPadding(dp(20), 0, dp(20), dp(20))
+        setPadding(dp(16), 0, dp(16), dp(16))
         clipChildren = false
         clipToPadding = false
+        val density = resources.displayMetrics.density
 
-        val hero = FrameLayout(this@MainActivity).apply {
+        // ---------------------------- 1. the stage ----------------------------
+        val stage = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            clipChildren = false
+            // The frame is the same fixed neon accent the cards use, lit in every
+            // state: the panel must not lose its outline the moment a session
+            // starts, which is what a state-driven accent did to the rail. The
+            // accent doubles as the bloom colour in GlassDrawable, so it has to
+            // clear its alpha floor (40/255) to read as lit rather than faint.
             background = Sculpt.sculptedBackground(
-                resources.displayMetrics.density,
-                Color.BLACK,
-                30,
-                accent = Sculpt.withAlpha(primary, 0.30f),
+                density,
+                Sculpt.blend(palette.surface, palette.ink, 0.04f),
+                28,
+                accent = Sculpt.withAlpha(palette.neonBlue, 0.5f),
             )
+            setPadding(dp(14), dp(12), dp(14), dp(14))
+        }
+
+        // Top row: what the tunnel is doing (left) and how fast (right).
+        val stageTop = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        stageStatusPill = label(
+            Strings.t("Not connected"),
+            9.5f,
+            MUTED,
+            TypefaceStyle.MEDIUM,
+        ).apply {
+            gravity = Gravity.CENTER
+            letterSpacing = spacing(0.10f)
+            setPadding(dp(11), dp(5), dp(11), dp(5))
+            background = Sculpt.sculptedBackground(
+                density,
+                Sculpt.recess(palette.surface, 0.25f),
+                999,
+                stroke = Sculpt.withAlpha(MUTED, 0.35f),
+            )
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            // A cap, not just an ellipsis: this row also carries the live speed
+            // readout, and a long localized state string ("Connection degraded"
+            // and its Persian twin) would otherwise push it off the stage — the
+            // row is inside a clipChildren=false parent, so an overflowing pill
+            // would draw outside the panel instead of being clipped by it.
+            maxWidth = dp(160)
+            contentDescription = "وضعیت اتصال"
+        }
+        stageTop.addView(
+            stageStatusPill,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        // Live throughput — the same view the metrics ticker has always written
+        // to. It moved inside the stage so one band answers "how fast" instead of
+        // a second bar repeating what the SPEED tile already shows.
+        homeLiveSpeed = label("↓ 0 B/S   ↑ 0 B/S", 10f, MUTED, TypefaceStyle.MEDIUM).apply {
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            letterSpacing = spacing(0.04f)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            contentDescription = "سرعت زنده آپلود و دانلود"
+        }
+        stageTop.addView(
+            homeLiveSpeed,
+            LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f,
+            ).apply { leftMargin = dp(8) },
+        )
+        stage.addView(
+            stageTop,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
+        // The dial: the only large filled control on the screen, centred. Its
+        // halo and pulse rings are inside its own measured box — see
+        // OrbitDialView.onMeasure for why that box is ring + bleed, and why no
+        // ancestor has to stop clipping for the glow to survive. The box is the
+        // same 250dp the hero gave it, so the redesign does not shrink the one
+        // control the user came for.
+        orbitDial.sizeScale = 1f
+        stage.addView(
+            orbitDial,
+            LinearLayout.LayoutParams(dp(250), dp(250)).apply { topMargin = dp(4) },
+        )
+
+        connectionTitle.gravity = Gravity.CENTER
+        connectionTitle.letterSpacing = spacing(0.05f)
+        connectionDetail.gravity = Gravity.CENTER
+        connectionDetail.letterSpacing = spacing(0.03f)
+        // Seed the idle paint here rather than waiting for a broadcast.
+        //
+        // A cold start with no tunnel running receives nothing: the service only
+        // broadcasts on state *changes*, so neither the receiver nor
+        // [renderStatus] ever fires, and the two views that now carry the whole
+        // status line of the stage would sit empty under a dial that says
+        // "TAP TO CONNECT". This is the same text showDisconnected() writes, kept
+        // in one place so the two can never drift.
+        connectionTitle.setTextColor(INK)
+        connectionTitle.text = Strings.t("Not connected")
+        connectionDetail.text = Strings.t("Tap the button to connect")
+        stage.addView(
+            connectionTitle,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(12) },
+        )
+        stage.addView(
+            connectionDetail,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(3) },
+        )
+
+        // Ping and transport as pills. Both carry live text: the latency chip is
+        // the tap target for a manual probe, the protocol chip relabels itself
+        // when the rail moves.
+        val chipRow = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
             clipChildren = false
         }
-        hero.addView(ImageView(this@MainActivity).apply {
-            setImageResource(R.drawable.kourosh_palace_cars_bg)
-            scaleType = ScaleType.CENTER_CROP
-            alpha = 0.84f
-            contentDescription = null
-        }, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        ))
-        hero.addView(View(this@MainActivity).apply {
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(
-                    Color.argb(180, 2, 5, 8),
-                    Color.argb(35, 2, 5, 8),
-                    Color.argb(210, 2, 5, 8),
-                ),
-            )
-        }, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        ))
-        val brand = label("KOUROSH AE", 13f, primary, TypefaceStyle.MEDIUM).apply {
-            gravity = Gravity.CENTER
-            letterSpacing = spacing(0.28f)
-            setShadowLayer(dp(9).toFloat(), 0f, 0f, Sculpt.withAlpha(primary, 0.75f))
-        }
-        hero.addView(brand, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP,
-        ).apply { topMargin = dp(16) })
-
-        val serverBadge = TextView(this@MainActivity).apply {
-            text = "◉  SERVER\n    ${Strings.t("Automatic")}"
+        fun stageChip(view: TextView): TextView = view.apply {
             textSize = 10f
-            setTextColor(INK)
-            typeface = Typefaces.medium(this@MainActivity)
-            letterSpacing = spacing(0.08f)
-            gravity = Gravity.CENTER_VERTICAL
+            setTextColor(Sculpt.withAlpha(MUTED, 0.95f))
+            gravity = Gravity.CENTER
+            letterSpacing = spacing(0.06f)
             setPadding(dp(12), dp(6), dp(12), dp(6))
+            // Gold-lit like the stage frame (neonBlue IS the gold on the dark
+            // palette), passed as the accent so it also drives the bloom — the
+            // divider stroke this replaced read as a faint grey outline that
+            // belonged to no other element on the screen.
             background = Sculpt.sculptedBackground(
-                resources.displayMetrics.density,
-                Color.argb(190, 2, 12, 18),
+                density,
+                Sculpt.recess(palette.surface, 0.25f),
                 999,
-                stroke = Sculpt.withAlpha(connected, 0.75f),
-                accent = Sculpt.withAlpha(connected, 0.38f),
+                accent = Sculpt.withAlpha(palette.neonBlue, 0.45f),
             )
-            contentDescription = Strings.t("Selected server")
-            setOnClickListener { openSettingsScreen() }
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
-        hero.addView(serverBadge, FrameLayout.LayoutParams(
-            dp(132), dp(48), Gravity.TOP or Gravity.END,
-        ).apply { topMargin = dp(54); rightMargin = dp(16) })
+        chipRow.addView(stageChip(chipLatency))
+        chipRow.addView(
+            stageChip(chipProtocol),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { leftMargin = dp(7) },
+        )
+        stage.addView(
+            chipRow,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(12) },
+        )
 
-        orbitDial.sizeScale = 1f
-        hero.addView(orbitDial, FrameLayout.LayoutParams(
-            dp(250),
-            dp(250),
-            Gravity.CENTER,
-        ).apply { topMargin = dp(4) })
-        val statusBlock = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(5), dp(12), dp(5))
-            background = Sculpt.sculptedBackground(
-                resources.displayMetrics.density,
-                Color.argb(170, 3, 7, 10),
-                16,
-                accent = Sculpt.withAlpha(primary, 0.40f),
-            )
-        }
-        connectionTitle.gravity = Gravity.CENTER
-        connectionTitle.textSize = 17f
-        connectionTitle.setTextColor(INK)
-        connectionTitle.letterSpacing = spacing(0.07f)
-        connectionDetail.gravity = Gravity.CENTER
-        connectionDetail.textSize = 10f
-        connectionDetail.setTextColor(MUTED)
-        connectionDetail.letterSpacing = spacing(0.10f)
-        statusBlock.addView(connectionTitle, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ))
-        statusBlock.addView(connectionDetail, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(2) })
-        hero.addView(statusBlock, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
-        ).apply { bottomMargin = dp(14) })
-        addView(hero, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(430),
-        ).apply { leftMargin = -dp(20); rightMargin = -dp(20) })
+        addView(
+            stage,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(4) },
+        )
+        // Kept for the connected glow theme — see [renderConnectedTheme].
+        homeStage = stage
+        // Paint the idle theme immediately: without this a cold start shows
+        // full-bright tiles until the first state change bothers to dim them.
+        renderConnectedTheme()
 
-        addView(label("PRIVATE NETWORK  •  LUXURY SECURE", 10f, primary, TypefaceStyle.MEDIUM).apply {
-            gravity = Gravity.CENTER
-            letterSpacing = spacing(0.30f)
-        }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(14); bottomMargin = dp(10) })
-
-        val liveInfo = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = Sculpt.sculptedBackground(
-                resources.displayMetrics.density,
-                Color.BLACK,
-                18,
-                accent = Sculpt.withAlpha(primary, 0.24f),
-            )
-        }
-        chipLatency.text = Strings.t("PING —")
-        chipLatency.textSize = 11f
-        chipLatency.setTextColor(MUTED)
-        chipLatency.gravity = Gravity.CENTER
-        chipLatency.letterSpacing = spacing(0.08f)
-        liveInfo.addView(chipLatency, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        homeLiveSpeed = label("↓ 0 B/S   ↑ 0 B/S", 11f, MUTED, TypefaceStyle.MEDIUM).apply {
-            gravity = Gravity.CENTER
-            letterSpacing = spacing(0.05f)
-        }
-        liveInfo.addView(homeLiveSpeed, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        addView(liveInfo, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(10); bottomMargin = dp(10) })
-
+        // -------------------------- 2. session metrics --------------------------
         val tiles = LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(tileDown, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
-            addView(tileUp, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
-            addView(tileSpeed, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            clipChildren = false
         }
-        addView(tiles, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ))
-        addView(exitNodeCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(14) })
-        addView(transportRail, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            transportRailHeight,
-        ).apply { topMargin = dp(10) })
+        tiles.addView(
+            tileDown,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { rightMargin = dp(8) },
+        )
+        tiles.addView(
+            tileUp,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { rightMargin = dp(8) },
+        )
+        tiles.addView(tileSpeed, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        addView(
+            tiles,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(12) },
+        )
+
+        // Session totals under the rate tiles. The tiles answer "how fast right
+        // now" and this line answers "how much this session" — the mock's DOWN
+        // 412 MB summary — so the cumulative counters the tiles used to carry
+        // did not disappear, they moved one line down. Written by
+        // [renderHomeMetrics] on every traffic sample.
+        homeTotalsLine = label("↓ 0 B   ↑ 0 B", 10.5f, MUTED, TypefaceStyle.MEDIUM).apply {
+            gravity = Gravity.CENTER
+            letterSpacing = spacing(0.04f)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            contentDescription = "حجم مصرف‌شده این نشست"
+        }
+        addView(
+            homeTotalsLine,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(7) },
+        )
+
+        // --------------------------- 3. the exit node ---------------------------
+        addView(
+            exitNodeCard,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) },
+        )
+
+        // ------------------------- 4. the transport picker ----------------------
+        // Captioned like the mock's SELECT PROTOCOL band, with the same section
+        // header the settings pages use. The rail used to sit under the exit
+        // card with no label at all, so a first-time user met six unexplained
+        // words; the caption states what the control is before they read it.
+        addView(
+            OrbitSectionHeader(this@MainActivity, palette, Strings.t("SELECT PROTOCOL")),
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(12) },
+        )
+        addView(
+            transportRail,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                transportRailHeight,
+            ).apply { topMargin = dp(7) },
+        )
+
+        // ---------------- 5. chain / smart split / MIM, one slot ----------------
+        // Exactly one of the three is ever applicable, and [renderChainCard] does
+        // the swap, so this band keeps its height whichever transport is picked.
         homePsiphonCountryRow = navRow(Strings.t("Psiphon country"), egressRegionLabel()) {
             chooseEgressRegion { homePsiphonCountryRow?.setValue(egressRegionLabel()) }
         }.also { row ->
             row.visibility = if (selectedProtocol == Protocol.PSIPHON) View.VISIBLE else View.GONE
         }
-        addView(homePsiphonCountryRow!!, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(8) })
-        addView(chainCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(56),
-        ).apply { topMargin = dp(10) })
-        addView(smartSplitCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(56),
-        ).apply { topMargin = dp(10) })
-        addView(mimCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(56),
-        ).apply { topMargin = dp(10) })
-        val secureCard = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = Sculpt.sculptedBackground(
-                resources.displayMetrics.density,
-                Color.argb(205, 2, 12, 18),
-                18,
-                stroke = Sculpt.withAlpha(primary, 0.62f),
-                accent = Sculpt.withAlpha(connected, 0.28f),
-            )
-            addView(label("◎", 28f, connected, TypefaceStyle.MEDIUM), LinearLayout.LayoutParams(dp(46), dp(44)))
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(label(Strings.t("SECURE CONNECTION"), 12f, connected, TypefaceStyle.MEDIUM).apply {
-                    letterSpacing = spacing(0.16f)
-                })
-                addView(label(Strings.t("No logs  ·  No limits  ·  Full privacy"), 10f, INK, TypefaceStyle.REGULAR).apply {
-                    alpha = 0.86f
-                    letterSpacing = spacing(0.05f)
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    topMargin = dp(4)
-                })
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                leftMargin = dp(8)
-            })
-            addView(label("▣", 24f, primary, TypefaceStyle.MEDIUM).apply {
-                contentDescription = Strings.t("AES-256 encryption")
-            }, LinearLayout.LayoutParams(dp(42), dp(44)))
-        }
-        addView(secureCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(64),
-        ).apply { topMargin = dp(10) })
-        addView(footerWave, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(36),
-        ).apply { topMargin = dp(10) })
-    }
+        addView(
+            homePsiphonCountryRow!!,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(8) },
+        )
+        addView(
+            chainCard,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(56),
+            ).apply { topMargin = dp(8) },
+        )
+        addView(
+            smartSplitCard,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(56),
+            ).apply { topMargin = dp(8) },
+        )
+        addView(
+            mimCard,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(56),
+            ).apply { topMargin = dp(8) },
+        )
 
-    private fun createConnectionConsole(): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER_HORIZONTAL
-        setPadding(dp(20), 0, dp(20), dp(20))
-        // The dial's halo and its two pulse rings are drawn outside its own 266dp
-        // box, on purpose, exactly as the mock's `inset:-24px` / `scale(1.32)` do.
-        // With the default clipChildren=true Android cut them off at the box edge,
-        // which is why the glow looked amputated at the bottom and the heartbeat
-        // seemed to burst out of an invisible frame. Both flags are required:
-        // clipChildren for the ring, clipToPadding for the 20dp side padding.
-        clipChildren = false
-        clipToPadding = false
-
-        addView(orbitDial, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            topMargin = dp(14)
-            // Cancel the console's 20dp side padding for this one child.
-            //
-            // The dial measures (RING + BLEED) * 2 so its glow has canvas to land
-            // on. The console's own padding would clamp that box and force the
-            // ring below its intended size; negative margins give the dial the
-            // full width back, so the ring keeps its size and the bleed still
-            // fits. clipToPadding=false (set above) is what lets it draw there.
-            leftMargin = -dp(20)
-            rightMargin = -dp(20)
-        })
-
-        // v1.8.7: English keeps the v1.8.5 margins exactly. fa/zh get a
-        // tighter block (title closer to the dial, detail closer to the title)
-        // to hand the reclaimed height back to the dial — see
-        // fitConsoleToViewport, which must net-neutral for English.
-        val titleGap = if (localizedTypography) dp(10) else dp(14)
-        val detailGap = if (localizedTypography) dp(1) else dp(3)
-        addView(connectionTitle, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = titleGap })
-        addView(connectionDetail, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = detailGap })
-
-        val chipLine = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            chipLatency.setTextColor(Sculpt.withAlpha(MUTED, 0.95f))
-            chipProtocol.setTextColor(Sculpt.withAlpha(MUTED, 0.95f))
-            addView(chipLatency)
-            addView(label("  ·  ", 12f, Sculpt.withAlpha(MUTED, 0.5f)))
-            addView(chipProtocol)
-        }
-        addView(chipLine, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            // 7dp → 2dp: the chip line sits between the dial block and the
-            // metric tiles, and the 5dp handed back here goes straight back
-            // to the dial through fitConsoleToViewport — part of restoring
-            // the pre-v1.9.3 dial size ("the connect button got smaller").
-            topMargin = dp(2)
-        })
-
-        val tiles = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(tileDown, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(9) })
-            addView(tileUp, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(0); rightMargin = dp(9) })
-            addView(tileSpeed, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(0) })
-        }
-        addView(tiles, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(14) })
-
-        addView(exitNodeCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(12) })
-
-        addView(transportRail, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            transportRailHeight,
-        ).apply { topMargin = dp(12) })
-
-        // Below the rail, not on it: the rail picks the transport, this wraps the
-        // Psiphon one in WARP. Same dp(56) as the action bar so every full-width
-        // control on this screen is the same height.
-        addView(chainCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(56),
-        ).apply { topMargin = dp(10) })
-
-        // Smart Split occupies the same slot, and exactly one of the two is ever
-        // visible: the chain card applies to Psiphon/Tor, this one to SHARD.
-        // [renderChainCard] does the swap, so the home screen keeps its height
-        // whichever transport is selected.
-        addView(smartSplitCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(56),
-        ).apply { topMargin = dp(10) })
-
-        // Masque-over-masque, the third occupant of the same slot: MASQUE's own
-        // chained mode. [renderChainCard] keeps exactly one of the three cards
-        // visible, so the screen keeps its height here too.
-        addView(mimCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(56),
-        ).apply { topMargin = dp(10) })
-
-        // The LOG / SPLIT / SCAN MODE action bar used to sit here. Its three
-        // destinations are now rows in Settings, next to the other things that
-        // configure a session, and the space it occupied is what the transport
-        // rail's second row uses — so adding SHARD cost the home screen no height.
-        //
-        // None of the three belonged on the first screen: SPLIT was already
-        // duplicated as a Settings row, SCAN MODE only applies to MASQUE and
-        // WireGuard, and LOG is where you go after something has gone wrong.
-
-        // Fills the gap that used to sit between the action bar and the bottom
-        // inset. Weight is one Path; it only animates while connected.
-        addView(footerWave, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(44),
-        ).apply { topMargin = dp(8) })
+        // --------------------------- 6. the signal trace ------------------------
+        addView(
+            footerWave,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(30),
+            ).apply { topMargin = dp(8) },
+        )
     }
 
     private fun refreshPublicIp(resetRetry: Boolean = true) {
@@ -6360,7 +6602,9 @@ class MainActivity : Activity() {
         else "\u200E" + formatTraffic(trafficMonthRx + trafficMonthTx) + " " + Strings.t("this month")
 
     private fun formatTraffic(bytes: Long): String = when {
-        bytes < 1_024 -> "$bytes B"
+        // Coerced like the service's formatBytes: a corrupt monthly total must
+        // never print as "-5 B".
+        bytes < 1_024 -> "${bytes.coerceAtLeast(0L)} B"
         bytes < 1_048_576 -> "${bytes / 1_024} KB"
         bytes < 1_073_741_824 -> "${bytes / 1_048_576} MB"
         else -> String.format(java.util.Locale.US, "%.2f GB", bytes / 1_073_741_824.0)
@@ -6987,6 +7231,12 @@ class MainActivity : Activity() {
         // user watches the search move — this is the whole point of doing it here
         // rather than inside the service.
         updateConnectionMode(protocol)
+        // Fresh rung, fresh number: the dead rung's estimate (frozen mid-climb
+        // on the dial) must not bleed into the new attempt, and the hook in
+        // [showConnectionProgress] would misread it as a real percent and stop
+        // the estimator. The handover's connect() restarts it from zero.
+        orbitDial.progressPercent = -1
+        stopConnectEstimator()
         showConnectionProgress(Strings.t("Auto Scan"), "Trying ${protocol.label}…")
         // The previous rung's session may still be unwinding. Consent is already
         // granted at this point (the first rung asked for it), so this goes straight
@@ -7162,20 +7412,29 @@ class MainActivity : Activity() {
     private fun showConnecting(detail: String? = null, progress: Int = -1) {
         // The percentage arrives on its own broadcasts, most of which carry no new
         // text, so it is applied before the shared progress renderer rather than
-        // through it.
-        orbitDial.progressPercent = progress
+        // through it. A bare -1 never blanks a running estimate: that would drop
+        // the "CONNECTING 87%" caption to the spinner until the next 300 ms tick.
+        if (progress >= 0 || !connectEstimatorRunning) {
+            orbitDial.progressPercent = progress
+        }
         showConnectionProgress(Strings.t("Connecting"), detail ?: Strings.tf("Starting %s tunnel", selectedProtocol.label))
     }
 
     private fun showStarting() {
         // STARTING and SCANNING are also CONNECTING on the dial, so a stale
-        // percentage from the previous attempt would still be drawn.
-        orbitDial.progressPercent = -1
+        // percentage from the previous attempt would still be drawn. Skipped
+        // while the estimator runs: mid-rung phase broadcasts must not blank
+        // the climbing number (each rung restarts it fresh via advanceAutoScan).
+        if (!connectEstimatorRunning) {
+            orbitDial.progressPercent = -1
+        }
         showConnectionProgress(Strings.t("Starting"), "Preparing ${selectedProtocol.label} tunnel")
     }
 
     private fun showScanning() {
-        orbitDial.progressPercent = -1
+        if (!connectEstimatorRunning) {
+            orbitDial.progressPercent = -1
+        }
         showConnectionProgress(Strings.t("Scanning"), Strings.t("Finding the best MASQUE gateway"))
     }
 
@@ -7205,6 +7464,18 @@ class MainActivity : Activity() {
         }
         footerWave.setLit(false)
         setModeEnabled(false)
+        // Progress: a real percent wins (Tor bootstrap arrives here already set
+        // on the dial); otherwise the estimator owns the number. The base text
+        // refreshes on every broadcast but the clock keeps running, so a
+        // multi-phase connect (STARTING → SCANNING → CONNECTING) climbs
+        // monotonically instead of restarting at zero per phase.
+        if (orbitDial.progressPercent in 0..100) {
+            stopConnectEstimator()
+        } else {
+            startConnectEstimator(
+                if (autoScanIndex >= 0) connectionDetail.text.toString() else detail,
+            )
+        }
     }
 
     private fun showConnected(restored: Boolean = false) {
@@ -7215,6 +7486,7 @@ class MainActivity : Activity() {
         visualState = OrbitDialView.State.CONNECTED
         orbitDial.state = visualState
         orbitDial.progressPercent = -1
+        stopConnectEstimator()
         renderStatusLed()
         pingFailureStreak = 0
         connectionTitle.setTextColor(palette.connectedText)
@@ -7256,6 +7528,8 @@ class MainActivity : Activity() {
         if (!isTunnelActive()) return
         visualState = OrbitDialView.State.DEGRADED
         orbitDial.state = visualState
+        orbitDial.progressPercent = -1
+        stopConnectEstimator()
         renderStatusLed()
         // Amber, but the readable amber: this is text on the card, and on the
         // light palette the vivid amber sits at 4.4:1 while the text amber is 7.3:1.
@@ -7275,6 +7549,8 @@ class MainActivity : Activity() {
         chipLatency.text = Strings.t("Latency —")
         visualState = OrbitDialView.State.FAILED
         orbitDial.state = visualState
+        orbitDial.progressPercent = -1
+        stopConnectEstimator()
         renderStatusLed()
         stopSessionTimer()
         connectionTitle.setTextColor(ERROR_TEXT)
@@ -7292,6 +7568,8 @@ class MainActivity : Activity() {
         chipLatency.text = Strings.t("Latency —")
         visualState = OrbitDialView.State.DISCONNECTED
         orbitDial.state = visualState
+        orbitDial.progressPercent = -1
+        stopConnectEstimator()
         renderStatusLed()
         stopSessionTimer()
         resetMetrics()
@@ -7334,12 +7612,13 @@ class MainActivity : Activity() {
     }
 
     private fun resetMetrics() {
-        tileDown.setValue("0", "B")
-        tileUp.setValue("0", "B")
+        tileDown.setValue("0", "B/S")
+        tileUp.setValue("0", "B/S")
         tileSpeed.setValue("0", "B/S")
-        tileDown.resetBars()
-        tileUp.resetBars()
-        tileSpeed.resetBars()
+        homeTotalsLine?.text = "↓ 0 B   ↑ 0 B"
+        tileDown.resetWave()
+        tileUp.resetWave()
+        tileSpeed.resetWave()
         exitNodeCard.resetSpark()
     }
 
@@ -7365,19 +7644,29 @@ class MainActivity : Activity() {
         else -> String.format(java.util.Locale.US, "%.1f", bytesPerSecond / 1_048_576.0) to "MB/S"
     }
 
-    /** Pushes the latest traffic sample into the three home-screen tiles. */
+    /**
+     * Pushes the latest traffic sample into the home-screen metrics.
+     *
+     * The tiles show live RATES (download / upload / combined), like the royal
+     * mock's DOWNLOAD 1.8 MB/S cards — a rate is what "how fast" means, and a
+     * cumulative counter answering that question sat frozen for minutes on a
+     * quiet tunnel. The cumulative session totals moved to [homeTotalsLine]
+     * directly below, and the per-session/per-month breakdowns live on the
+     * traffic monitor screen, so nothing that was visible became unreachable.
+     */
     private fun renderHomeMetrics() {
-        val (downValue, downUnit) = scaleBytes(trafficRx)
-        val (upValue, upUnit) = scaleBytes(trafficTx)
+        val (downValue, downUnit) = scaleSpeed(trafficSpeedRx)
+        val (upValue, upUnit) = scaleSpeed(trafficSpeedTx)
         tileDown.setValue(downValue, downUnit)
         tileUp.setValue(upValue, upUnit)
         val combined = trafficSpeedRx + trafficSpeedTx
         val (speedValue, speedUnit) = scaleSpeed(combined)
         tileSpeed.setValue(speedValue, speedUnit)
         homeLiveSpeed?.text = "↓ ${formatTraffic(trafficSpeedRx)}/s   ↑ ${formatTraffic(trafficSpeedTx)}/s"
-        // Bars are relative to a 512 KB/s ceiling — a realistic mobile-tunnel
+        homeTotalsLine?.text = "↓ ${formatTraffic(trafficRx)}   ↑ ${formatTraffic(trafficTx)}"
+        // Waves are relative to a 512 KB/s ceiling — a realistic mobile-tunnel
         // full scale. The old 4 MB/s ceiling squashed every real sample into the
-        // bottom 5% of the sparkline, so the bars never visibly moved.
+        // bottom 5% of the sparkline, so the wave never visibly moved.
         val ceiling = 512.0
         val kbPerSecond = combined / 1_024.0
         tileDown.push((trafficSpeedRx / 1_024.0 / ceiling).toFloat().coerceIn(0.04f, 1f))

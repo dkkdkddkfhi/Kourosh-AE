@@ -61,13 +61,20 @@ class KouroshAeTileService : TileService() {
     private fun toggleConnection(): Boolean {
         val tile = qsTile ?: return false
         val isConnected = TunnelStatus.isActive()
+        // A tap while the handshake is still running cancels it. The flag is
+        // published by the service's sendStatus funnel, so it is true exactly
+        // between the CONNECTING-family broadcasts and the terminal one — the
+        // tile cannot see the activity's dial state, and without this the tap
+        // fell through to the connect branch and died silently on the
+        // service's start-guard while the user watched a tile that did nothing.
+        val isConnecting = !isConnected && TunnelStatus.isConnecting
 
-        if (isConnected) {
-            // Disconnect
+        if (isConnected || isConnecting) {
+            // Disconnect (or cancel the handshake in flight).
             startService(Intent(this, KouroshAeVpnService::class.java).setAction(KouroshAeVpnService.ACTION_DISCONNECT))
             tile.state = Tile.STATE_INACTIVE
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                tile.subtitle = Strings.t("Disconnected")
+                tile.subtitle = Strings.t(if (isConnecting) "Disconnecting" else "Disconnected")
             }
             tile.updateTile()
             return false
@@ -186,12 +193,6 @@ class KouroshAeTileService : TileService() {
         }
     }
 
-    private val selectedProtocolcoreName: String
-        get() = getSharedPreferences(SETTINGS, MODE_PRIVATE)
-            .getString(DEFAULT_PROTOCOL, Protocol.WIREGUARD.coreName)
-            ?.let { name -> Protocol.entries.find { it.coreName == name } }
-            ?.coreName ?: Protocol.WIREGUARD.coreName
-
     private fun defaultScan(): ScanTarget {
         val name = getSharedPreferences(SETTINGS, MODE_PRIVATE).getString(DEFAULT_SCAN, ScanTarget.IPV4.coreName)
         return ScanTarget.entries.find { it.coreName == name } ?: ScanTarget.IPV4
@@ -286,7 +287,12 @@ class KouroshAeTileService : TileService() {
             MASQUE("MASQUE", "masque", "HTTP/3 tunnel"),
             WARP_IN_WARP("WARP-on-WARP", "gool", "Double-layer tunnel"),
             PSIPHON("Psiphon", "psiphon", "SOCKS5 proxy tunnel"),
-            TOR("Tor", "tor", "Onion routing");
+            TOR("Tor", "tor", "Onion routing"),
+            // Mirrors MainActivity.Protocol.SHARD (same position: last). Nothing
+            // reads it yet — configJson matches the stored string directly — but
+            // the two enums are maintained as one list, and a SHARD default must
+            // never silently resolve to something else in a future lookup.
+            SHARD("SHARD", "shard", "Public nodes, auto-selected; no setup");
 
             val label: String get() = Strings.t(enLabel)
             val description: String get() = Strings.t(enDescription)

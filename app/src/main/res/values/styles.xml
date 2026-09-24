@@ -18,7 +18,9 @@
         <item name="colorPrimary">#F6D98B</item>
         <item name="colorOnPrimary">#050505</item>
         <item name="colorSecondary">#22D3C5</item>
-        <item name="colorError">#B3372F</item>
+        <!-- Soft red, not the dial's danger ring: this paints framework error
+             text on a dark dialog, where #B3372F reads 3.3:1. -->
+        <item name="colorError">#F2A39B</item>
         <!-- void / raised / recessed surfaces -->
         <item name="android:colorBackground">#050505</item>
         <item name="colorSurface">#0B0A08</item>
