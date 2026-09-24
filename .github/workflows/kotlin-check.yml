@@ -52,7 +52,7 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew :app:compileReleaseKotlin --no-daemon \
-            -x buildRustCoreArm64V8a -x buildRustCoreArmeabiV7a -x buildRustCoreX8664 \
+            -x buildRustCoreArm64V8a -x buildRustCoreArmeabiV7a -x buildRustCoreX86_64 \
             2>&1 | tee /tmp/check.log
 
       - name: Commit compiler diagnostics on failure
