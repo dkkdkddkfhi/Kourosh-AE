@@ -57,7 +57,7 @@ jobs:
       - name: Upload signed APK and Play AAB artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Kourosh-AE-v2.1.20-release
+          name: Kourosh-AE-v2.1.21-release
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
@@ -67,12 +67,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v2.1.20 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
-            gh release create v2.1.20 --repo "${{ github.repository }}" --target "${{ github.sha }}" \
-              --title 'Kourosh-AE v2.1.20' --notes 'Home console redesign with updated visual layout, state handling, light-theme navigation, and the latest main interface improvements.'
+          gh release view v2.1.21 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create v2.1.21 --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+              --title 'Kourosh-AE v2.1.21' --notes 'New home screen: the Aurora console. The dial, hero panel, live traffic chart, exit node, transport grid, navigation dock and the whole visual language were rebuilt from scratch on both themes. The palace artwork and every previous home-screen component were removed; the backdrop is now drawn, so the APK is ~6 MB smaller.'
       - name: Publish signed APK and AAB to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload v2.1.20 app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab \
+          gh release upload v2.1.21 app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab \
             --repo "${{ github.repository }}" --clobber

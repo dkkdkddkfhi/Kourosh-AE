@@ -2,10 +2,10 @@
 
 ## Intent
 
-Kourosh-AE should feel like a royal Persian command console: black glass, gold frames, a live
-connection dial. The home screen is a single-purpose connection console: the connection state
-is visible at a glance, the main action is physically obvious, and live connection facts
-(exit IP, country, rates, totals, duration) are readable without scrolling.
+Kourosh-AE should feel like a royal Persian command console: black glass, gold frames, one
+live connection dial. The home screen is a single-purpose connection console: the connection
+state is visible at a glance, the main action is physically obvious, and live connection
+facts (exit IP, country, rates, totals, duration) are readable without hunting for them.
 
 This is Kourosh-AE's own visual system. Any third-party app is an interaction reference only;
 do not copy its code, wording, logo, or branding.
@@ -13,8 +13,9 @@ do not copy its code, wording, logo, or branding.
 ## Foundations
 
 - **Platform:** native Android views, platform typography, and Android system bars. No Compose
-  runtime and no Material components ship with the app; every surface is hand-drawn in
-  `Sculpt.kt` (`GlassDrawable`) and carried on the palette in `AppAppearance.kt`.
+  runtime and no Material components ship with the app; every surface is hand-drawn
+  (`Sculpt.kt` for the shared glass, `AuroraDesign.kt` for the home screen's own painter) and
+  carried on the palette in `AppAppearance.kt`.
 - **Two palettes, both fixed.** `ORBIT` (dark) and `PORCELAIN` (light) are the only themes; the
   user picks one in Appearance. Nothing is derived from the phone's wallpaper — no dynamic
   colour, no `values-night` split, because the choice is the user's, not the OS's.
@@ -42,74 +43,85 @@ do not copy its code, wording, logo, or branding.
   inner bottom shadow; on light those vanish, so the model inverts: a real drop shadow
   (`Sculpt.Lighting.elevationDp`) and a card that is *lighter* than the page.
 - **Typography:** Roboto / Android system sans, with bundled Vazirmatn and Noto Sans for Persian
-  and Chinese (see `Typefaces`, `FontChoice`). Compact hierarchy: headline 21sp, status detail
-  13.5sp, labels 14sp, metadata 10–12sp, section captions 8.5–9.5sp with wide tracking. Latin-only
+  and Chinese (see `Typefaces`, `FontChoice`). The home screen's steps are fixed in `Aurora`:
+  captions 8.5sp with wide tracking, body 13sp, readouts 15sp mono, timer 16–17sp mono. Latin-only
   letter spacing: joined scripts shatter under it.
 
-## Home screen
+## Home screen — the Aurora console
 
-A royal masthead opens the screen: the lion-crest logo beside the KOUROSH-AE / PRIVATE NETWORK
-lockup, with the connection LED next to it. On the dark theme the palace artwork sits behind
-the whole screen at 14% under a scrim; the light theme skips it and stays clean porcelain.
+The screen is drawn by `AuroraDesign.kt` (tokens, panel painter, icons, backdrop),
+`AuroraDial.kt`, `AuroraWidgets.kt` and `AuroraCards.kt`, and assembled in
+`MainActivity.createHomeHeader/createHomeConsole/createHomeDock`. The previous console —
+palace-photo backdrop, tick gauge dial, waveform tiles, segmented rail, text-glyph navigation —
+was deleted outright, not restyled.
 
-The screen is one reading order, top to bottom, and each band answers exactly one question:
+**One loud object per screen.** The hero panel is the largest surface and the only one with a
+state-tinted body; the cards under it are deliberately quieter (smaller radius, neutral fill, a
+hairline rather than a lit frame). Depth comes from light — body gradient, top specular, inner
+bottom shadow, 1dp bevel — never from a stack of identical outlined boxes.
 
-1. **Stage** — a sculpted panel with a lit gold frame. State pill and live throughput sit above
-   the dial; the headline and its detail sit below it; latency and transport close the panel
-   in gold-lit pills. Everything needed to answer "is the tunnel up, on what, how fast" is
-   inside one object.
-2. **Metrics** — live rates (download / upload / combined) as waveform tiles, with the session
-   totals on one line beneath them.
-3. **Exit node** — the address the tunnel is really leaving from.
-4. **Transport** — the picker under a SELECT PROTOCOL caption, locked while a tunnel is up.
-5. **Chain / split / MIM** — the one applicable card, in a fixed-height slot.
-6. **Signal trace** — the strip that closes the screen.
+Reading order, top to bottom:
+
+1. **Header** — drawn-icon menu button, the crest on a lit tile, the KOUROSH-AE / PRIVATE NETWORK
+   lockup, the state LED in its own pill, and the settings button. No text glyphs anywhere.
+2. **Hero** — a state-tinted panel holding the dial, the state pill, the live throughput, the
+   headline and its two-line detail, and the latency/transport chips. Everything needed to answer
+   "is the tunnel up, on what, and how fast" is inside one object.
+3. **Live traffic** — one card: the dual-series chart on top, the three rates below it as metered
+   tiles, the session totals on the card's header line.
+4. **Exit node** — the address the tunnel is really leaving from.
+5. **Transport** — a grid of glyph pills under a SELECT PROTOCOL caption, locked while a tunnel
+   is up.
+6. **Chain / split / MIM** — the one applicable card, in a fixed-height slot.
+7. **Signal strip** — the ambient strip that closes the screen.
+8. **Dock** — four drawn-icon entries with the current page on a lit pill, and the connect
+   control elevated through the bar.
 
 Rules that come out of that order:
 
-- The header carries the brand: crest logo plus the KOUROSH-AE / PRIVATE NETWORK lockup. The
-  "server" badge, the tagline and the security panel stay gone: the exit card states the real
-  exit, and an app may not advertise privacy facts the core has not reported. State is carried
-  by the dial, the pill and the headline, which all read the same source.
-- Put the circular connection control at the visual centre of the stage. It is the only large,
-  filled control on the screen and has a minimum 176dp target.
-- Place the selected connection status immediately below the circle.
-- The app is VPN-mode only; there is no mode selector. The protocol picker is the single
-  outlined, full-width control beneath the stage, and it is disabled while a tunnel is active.
+- **The dial is the state.** One continuous ring: a 40° cap at rest, an amber comet while
+  dialling (with the transport's own percent when it reports one), a closed mint ring that
+  animates shut on connect, red only after a reported failure. No tick gauge, no overlapping
+  radar sweep, no second progress bar — one idea per state, given room.
+- **The numbers live in the glass.** The connect estimate and the session timer are set inside
+  the disc, so the control answers "how long / how much left" without the eye leaving it.
+- **Put the circular control at the visual centre of the hero.** It is the only large filled
+  control on the screen, and the hero's whole layout is budgeted around it.
+- The app is VPN-mode only; there is no mode selector. The protocol grid is the single control
+  of its kind and it is disabled while a tunnel is active.
 - Use real connection wording only: `Not connected`, `Connecting`, `Connected`,
   `Connection degraded` and `Connection failed`. Do not claim protection before the core
   reports it is running.
-- The control uses the primary colour while idle or connecting, brighter green while connected,
-  amber when a tunnel is up but failing its health check, and red only after a reported
-  connection failure.
-- Height is budgeted from the dial upward. Only the dial scales when the console would
-  overflow the viewport, so decoration above it is paid for in control size; a shorter stage
-  is a bigger dial.
+- The dial's accent is `primary` while idle, `amber` while connecting or degraded, `connected`
+  while up, and `danger` only after a reported failure.
+- Height is budgeted from the dial upward: the dial is the only element that scales when the
+  console would overflow the viewport (`AuroraDialView.sizeScale`, floor 0.80), so decoration
+  above it is paid for in control size.
 
 ## Motion and feedback
 
-- A press scales the circular control to 97% for 90ms, then returns over 180ms with a
-  strong ease-out. State changes redraw the ring and icon rather than moving the layout.
+- A press scales the dial to 97% for 100ms, then returns over 180ms with a strong ease-out.
+- State changes redraw the ring, the glyph and the lighting rather than moving the layout.
 - Use Android's standard context-click haptic on an intentional connection tap.
 - Keep motion under 300ms and restricted to transform, alpha, and the control's own drawing.
-- Latency keeps its normal graph while probing. After each returned `N ms`, lift and settle the
-  graph over 280ms without moving surrounding content.
+  The only continuous motion is the ambient kind: the dial's orbit dot and bloom, the backdrop's
+  24s drift and the signal strip.
+- Connected is a lighting state, not a colour swap: the hero frame takes the accent and its body
+  lifts, the traffic tiles undim, the live-speed readout takes the connected accent, the strip
+  brightens and the backdrop comes up. All of it reverts on disconnect — a glow that outlives
+  the tunnel would be a lie.
 - Respect Android accessibility: every interactive element has a clear content description;
   colour never carries state alone.
-- While turning on, the dial shows a live percent answering "how much is left": the
-  transport's own number when it reports one (Tor bootstrap), otherwise a UI-side
-  time-based estimate that asymptotes at 95% and clears the moment the tunnel resolves.
-- Connected is a lighting state, not a colour swap: the stage frame goes bright in the
-  state accent, its fill lifts, the metric tiles undim, the live-speed readout takes the
-  connected accent, and (dark theme) the palace backdrop fades brighter. All of it reverts
-  on disconnect — a glow that outlives the tunnel would be a lie.
 
 ## Guardrails
 
 - No copied third-party assets, names, code, screenshots, or branding.
-- No decorative gradients, glow, oversized text, fake statistics, or nested-card dashboards. The
-  lit frames, the dial's halo and the dark theme's 14% palace backdrop are the only light
-  effects in the app; the first two carry state, and the third is atmosphere that never sits
-  behind text without its scrim.
-- No extra UI libraries for this first screen. Add Jetpack Compose or Material dependencies
-  only when the app grows enough screens to justify that migration.
+- No decorative gradients for their own sake, no oversized text, no fake statistics, no
+  nested-card dashboards. The lit frames, the dial's bloom and the backdrop's two washes are the
+  only light effects in the app; the first two carry state, the third is atmosphere that never
+  sits behind text.
+- No extra UI libraries for this screen. Add Jetpack Compose or Material dependencies only when
+  the app grows enough screens to justify that migration.
+- The backdrop is **drawn**, not shipped: `AuroraBackdrop` replaced the 6 MB palace photograph so
+  both palettes share one atmosphere and the APK stays small. Do not reintroduce bitmaps for the
+  home screen.
