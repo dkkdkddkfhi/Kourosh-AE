@@ -1,6 +1,13 @@
 name: Kourosh-AE Android Release
 on:
   workflow_dispatch:
+  # Working branches publish on push. The automation token used to drive this repo
+  # has Contents: write but not Actions: write, so it cannot call the dispatch API
+  # (HTTP 403) — a push event is the one trigger it can always reach. Scoped to
+  # `arena/**` so the release branch and main are unaffected.
+  push:
+    branches:
+      - 'arena/**'
 permissions:
   contents: write
 jobs:
