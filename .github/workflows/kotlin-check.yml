@@ -44,10 +44,16 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x gradlew
 
+      # preBuild depends on the three Rust core tasks, so a plain compile would pay
+      # for every ABI and stop being a fast check (and would fail outright without a
+      # Rust toolchain). Kotlin compilation does not read libaether.so — only
+      # packaging does — so the native tasks are excluded here on purpose.
       - name: Compile release Kotlin
         run: |
           set -o pipefail
-          ./gradlew :app:compileReleaseKotlin --no-daemon 2>&1 | tee /tmp/check.log
+          ./gradlew :app:compileReleaseKotlin --no-daemon \
+            -x buildRustCoreArm64V8a -x buildRustCoreArmeabiV7a -x buildRustCoreX8664 \
+            2>&1 | tee /tmp/check.log
 
       - name: Commit compiler diagnostics on failure
         if: failure()
