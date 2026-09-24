@@ -1372,17 +1372,18 @@ class MainActivity : Activity() {
             setPadding(0, 0, dp(10), 0)
             setOnClickListener { openSettingsScreen() }
         }, LinearLayout.LayoutParams(dp(48), dp(48)))
-        addView(label("♛", 18f, primary, TypefaceStyle.MEDIUM).apply {
-            setPadding(0, 0, dp(6), 0)
+        addView(ImageView(this).apply {
+            setImageResource(R.drawable.kourosh_ae_logo)
+            scaleType = ScaleType.CENTER_INSIDE
             contentDescription = "Kourosh-AE"
+        }, LinearLayout.LayoutParams(dp(174), dp(48)).apply {
+            leftMargin = dp(2)
+            rightMargin = dp(8)
         })
         statusLed.layoutParams = LinearLayout.LayoutParams(dp(7), dp(7)).apply {
             rightMargin = dp(7)
         }
         addView(statusLed, statusLed.layoutParams)
-        addView(label(Strings.t("Kourosh-AE"), 14f, primary, TypefaceStyle.MEDIUM).apply {
-            letterSpacing = spacing(0.14f)
-        })
         addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
         addView(ImageView(this@MainActivity).apply {
             setImageResource(R.drawable.ic_settings)
@@ -1626,6 +1627,28 @@ class MainActivity : Activity() {
             Gravity.TOP,
         ).apply { topMargin = dp(16) })
 
+        val serverBadge = TextView(this@MainActivity).apply {
+            text = "◉  SERVER\n    ${Strings.t("Automatic")}"
+            textSize = 10f
+            setTextColor(INK)
+            typeface = Typefaces.medium(this@MainActivity)
+            letterSpacing = spacing(0.08f)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            background = Sculpt.sculptedBackground(
+                resources.displayMetrics.density,
+                Color.argb(190, 2, 12, 18),
+                999,
+                stroke = Sculpt.withAlpha(connected, 0.75f),
+                accent = Sculpt.withAlpha(connected, 0.38f),
+            )
+            contentDescription = Strings.t("Selected server")
+            setOnClickListener { openSettingsScreen() }
+        }
+        hero.addView(serverBadge, FrameLayout.LayoutParams(
+            dp(132), dp(48), Gravity.TOP or Gravity.END,
+        ).apply { topMargin = dp(54); rightMargin = dp(16) })
+
         orbitDial.sizeScale = 1f
         hero.addView(orbitDial, FrameLayout.LayoutParams(
             dp(250),
@@ -1666,7 +1689,7 @@ class MainActivity : Activity() {
         ).apply { bottomMargin = dp(14) })
         addView(hero, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(360),
+            dp(430),
         ).apply { leftMargin = -dp(20); rightMargin = -dp(20) })
 
         addView(label("PRIVATE NETWORK  •  LUXURY SECURE", 10f, primary, TypefaceStyle.MEDIUM).apply {
@@ -1742,6 +1765,40 @@ class MainActivity : Activity() {
         addView(mimCard, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             dp(56),
+        ).apply { topMargin = dp(10) })
+        val secureCard = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = Sculpt.sculptedBackground(
+                resources.displayMetrics.density,
+                Color.argb(205, 2, 12, 18),
+                18,
+                stroke = Sculpt.withAlpha(primary, 0.62f),
+                accent = Sculpt.withAlpha(connected, 0.28f),
+            )
+            addView(label("◎", 28f, connected, TypefaceStyle.MEDIUM), LinearLayout.LayoutParams(dp(46), dp(44)))
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(label(Strings.t("SECURE CONNECTION"), 12f, connected, TypefaceStyle.MEDIUM).apply {
+                    letterSpacing = spacing(0.16f)
+                })
+                addView(label(Strings.t("No logs  ·  No limits  ·  Full privacy"), 10f, INK, TypefaceStyle.REGULAR).apply {
+                    alpha = 0.86f
+                    letterSpacing = spacing(0.05f)
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    topMargin = dp(4)
+                })
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                leftMargin = dp(8)
+            })
+            addView(label("▣", 24f, primary, TypefaceStyle.MEDIUM).apply {
+                contentDescription = Strings.t("AES-256 encryption")
+            }, LinearLayout.LayoutParams(dp(42), dp(44)))
+        }
+        addView(secureCard, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(64),
         ).apply { topMargin = dp(10) })
         addView(footerWave, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
