@@ -177,7 +177,7 @@ class AuroraDialView(
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val desired = dp((BOX_DP * sizeScale).roundToInt())
+        val desired = dp(BOX_DP * sizeScale).roundToInt()
         val width = resolveSize(desired, widthMeasureSpec)
         val height = resolveSize(desired, heightMeasureSpec)
         // Always square: a non-square box would put the ring off-centre and give the

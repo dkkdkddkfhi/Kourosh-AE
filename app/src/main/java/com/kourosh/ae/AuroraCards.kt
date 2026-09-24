@@ -288,7 +288,7 @@ abstract class AuroraSlotCard(
                 context, palette, 12,
                 accent = Sculpt.withAlpha(palette.ink, 0.10f),
                 lit = false,
-                fill = Sculpt.wellFill(palette),
+                fill = Aurora.wellFill(palette),
             )
         }
         glyph.setColor(if (lit) Sculpt.onGlass(accent) else Sculpt.withAlpha(palette.faint, 0.95f))

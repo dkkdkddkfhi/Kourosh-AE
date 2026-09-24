@@ -1560,7 +1560,7 @@ class MainActivity : Activity() {
                 FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER),
             )
             setOnClickListener {
-                performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_FOCUS)
+                performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
                 action()
             }
         }
@@ -1807,7 +1807,7 @@ class MainActivity : Activity() {
         row.addView(Space(this), LinearLayout.LayoutParams(dp(80), dp(1)))
         slot(AuroraNavItem(this, palette, AuroraIcon.LOGS, Strings.t("LOGS")) { openLogsScreen() }, 1f)
         slot(AuroraNavItem(this, palette, AuroraIcon.SETTINGS, Strings.t("SETTINGS")) { openSettingsScreen() }, 1f)
-        home.setSelected(true)
+        home.setActive(true)
 
         val dock = FrameLayout(this).apply {
             clipChildren = false
@@ -2454,7 +2454,7 @@ class MainActivity : Activity() {
     }
 
     // The four main-screen selector rows (MODE / LOG / PERF / SCAN) are gone.
-    // MODE became the sliding TransportRail, LOG and SCAN became sculpted entries
+    // MODE became the scrolling protocol rail, LOG and SCAN became sculpted entries
     // in the ActionBar, and PERF moved into Settings — it is a once-a-year knob
     // that was occupying a quarter of the home screen.
 
@@ -2843,7 +2843,7 @@ class MainActivity : Activity() {
     /**
      * A small text button for the logs header.
      *
-     * Not an OrbitActionBar entry: those are full-height pills with a glyph, and
+     * Not a transport-rail cell: those are full-height pills with a glyph, and
      * three of them already sit at the bottom of the main screen. These live inline
      * next to the title.
      */

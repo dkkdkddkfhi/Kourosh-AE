@@ -31,10 +31,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
+      # Must match build.yml: the runner image alone does not carry these, and a
+      # bare setup-android step fails before Gradle ever starts.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
           accept-android-sdk-licenses: true
 
       - name: Make Gradle executable

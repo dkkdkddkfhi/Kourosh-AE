@@ -73,7 +73,7 @@ class AuroraStatTile(
         isFocusable = true
         contentDescription = caption
         setOnClickListener {
-            performHapticFeedback(HapticFeedbackConstants.CONTEXT_FOCUS)
+            performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
             onClick()
         }
 
@@ -1000,7 +1000,7 @@ class AuroraNavItem(
         isFocusable = true
         contentDescription = title
         setOnClickListener {
-            performHapticFeedback(HapticFeedbackConstants.CONTEXT_FOCUS)
+            performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
             onClick()
         }
 
@@ -1026,9 +1026,9 @@ class AuroraNavItem(
     }
 
     /** Paints the current-page state. */
-    fun setSelected(selected: Boolean) {
+    fun setActive(active: Boolean) {
         val accent = palette.primary
-        content.background = if (selected) {
+        content.background = if (active) {
             Aurora.pill(context, palette, accent, filled = true, alpha = 0.16f)
         } else {
             null
