@@ -150,10 +150,8 @@ class MainActivity : Activity() {
      * single painter for every state-carrying surface, and both of these are written
      * there and nowhere else.
      */
-    private val statusChipLabel: TextView = Aurora.label(
-        this, Strings.t("OFF"), 8.5f, MUTED,
-        face = Aurora.Face.MEDIUM, tracking = 0.14f,
-    ).apply { maxLines = 1 }
+    /** Built in onCreate after the persisted palette has been loaded. */
+    private lateinit var statusChipLabel: TextView
     private lateinit var mainRoot: FrameLayout
     private lateinit var pageHost: FrameLayout
     private lateinit var appUpdater: AppUpdater
@@ -598,6 +596,14 @@ class MainActivity : Activity() {
         // recreate() never orphans it.
         AppLanguage.appContext = applicationContext
         palette = AppAppearance.load(this)
+        // This must be created only after [palette] is loaded. The old property
+        // initializer evaluated MUTED while the Activity object itself was being
+        // constructed, before onCreate, which threw
+        // UninitializedPropertyAccessException and made the app exit immediately.
+        statusChipLabel = Aurora.label(
+            this, Strings.t("OFF"), 8.5f, MUTED,
+            face = Aurora.Face.MEDIUM, tracking = 0.14f,
+        ).apply { maxLines = 1 }
         // Profiles: prefix any settings key written before this feature existed,
         // so an upgrade keeps every value the user set. Idempotent — a second
         // run finds nothing bare and returns 0.
