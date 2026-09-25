@@ -91,7 +91,7 @@ jobs:
       - name: Upload signed APK and Play AAB artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Kourosh-AE-v2.1.22-release
+          name: Kourosh-AE-v2.1.23-release
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
@@ -107,7 +107,7 @@ jobs:
       # The notes live in a quoted heredoc rather than in a quoted flag. The prose
       # says "the tunnel's state"; inside a single-quoted argument that apostrophe
       # closes the string, the shell hits the next parenthesis and dies with a syntax
-      # error before gh is ever called. That is what cost v2.1.22 its release. A
+      # error before gh is ever called. That is what cost the previous release. A
       # quoted heredoc takes apostrophes, real newlines and em dashes as written, so
       # there is nothing left to escape.
       - name: Create or reuse GitHub Release
@@ -151,15 +151,15 @@ jobs:
           download, compare it against the SHA-256 in SHA256SUMS, released alongside the APKs.
 
           NOTES
-          gh release view v2.1.22 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
-            gh release create v2.1.22 --repo "${{ github.repository }}" \
-              --target "${{ github.sha }}" --title 'Kourosh-AE v2.1.22' \
+          gh release view v2.1.23 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create v2.1.23 --repo "${{ github.repository }}" \
+              --target "${{ github.sha }}" --title 'Kourosh-AE v2.1.23' \
               --notes-file "$RUNNER_TEMP/notes.md"
       - name: Publish signed APK and AAB to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload v2.1.22 app/build/outputs/apk/release/*.apk \
+          gh release upload v2.1.23 app/build/outputs/apk/release/*.apk \
             app/build/outputs/bundle/release/*.aab \
             app/build/outputs/apk/release/SHA256SUMS \
             --repo "${{ github.repository }}" --clobber
