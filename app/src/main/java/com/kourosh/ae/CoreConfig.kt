@@ -91,7 +91,12 @@ object CoreConfig {
      *   [SOCKS_PORT]. Only the outer leg of Psiphon-over-WARP uses this: Psiphon
      *   owns [SOCKS_PORT] in that mode, so the core has to move aside.
      */
-    fun json(context: Context, protocol: String?, listenOverride: Int?): String {
+    fun json(
+        context: Context,
+        protocol: String?,
+        listenOverride: Int?,
+        ignoreEgressRegion: Boolean = false,
+    ): String {
         val prefs = context.profiled()
         fun text(key: String, fallback: String = "") =
             prefs.getString(key, fallback)?.trim().orEmpty()
@@ -205,7 +210,7 @@ object CoreConfig {
             putOpt("exit_loc", prefs.getString("aether_exit_loc", null)?.ifBlank { null })
             put("exit_loc_secs", prefs.getLong("aether_exit_loc_secs", 60L).coerceIn(10L, 3600L))
             put("stats", prefs.getBoolean("aether_stats", false))
-            putOpt("psiphon_region", egressRegion(context))
+            putOpt("psiphon_region", if (ignoreEgressRegion) null else egressRegion(context))
             putOpt("psiphon_mode", prefs.getString("psiphon_mode", null)?.ifBlank { null })
             putOpt("psiphon_http", prefs.getString("psiphon_http", null)?.ifBlank { null })
             putOpt("tor_bridge_file", prefs.getString("tor_bridge_file", null)?.ifBlank { null })

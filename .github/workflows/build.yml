@@ -91,7 +91,7 @@ jobs:
       - name: Upload signed APK and Play AAB artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Kourosh-AE-v2.1.23-release
+          name: Kourosh-AE-v2.1.24-release
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
@@ -151,15 +151,15 @@ jobs:
           download, compare it against the SHA-256 in SHA256SUMS, released alongside the APKs.
 
           NOTES
-          gh release view v2.1.23 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
-            gh release create v2.1.23 --repo "${{ github.repository }}" \
-              --target "${{ github.sha }}" --title 'Kourosh-AE v2.1.23' \
+          gh release view v2.1.24 --repo "${{ github.repository }}" >/dev/null 2>&1 || \
+            gh release create v2.1.24 --repo "${{ github.repository }}" \
+              --target "${{ github.sha }}" --title 'Kourosh-AE v2.1.24' \
               --notes-file "$RUNNER_TEMP/notes.md"
       - name: Publish signed APK and AAB to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload v2.1.23 app/build/outputs/apk/release/*.apk \
+          gh release upload v2.1.24 app/build/outputs/apk/release/*.apk \
             app/build/outputs/bundle/release/*.aab \
             app/build/outputs/apk/release/SHA256SUMS \
             --repo "${{ github.repository }}" --clobber

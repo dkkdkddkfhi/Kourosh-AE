@@ -7269,7 +7269,12 @@ class MainActivity : Activity() {
         return if (chained) {
             CoreConfig.json(this, KouroshAeVpnService.CHAIN_PROTOCOL_MARKER.lowercase())
         } else {
-            CoreConfig.json(this, selectedProtocol.coreName)
+            CoreConfig.json(
+                this,
+                selectedProtocol.coreName,
+                listenOverride = null,
+                ignoreEgressRegion = autoScanIndex >= 0 && selectedProtocol == Protocol.PSIPHON,
+            )
         }
     }
     private fun renderStatus() {
@@ -8803,11 +8808,15 @@ class MainActivity : Activity() {
         /**
          * The transports the Auto Scan is allowed to try, in order.
          *
-         * Psiphon and Tor are absent by instruction: both are deliberate choices with
-         * their own costs (an account-free anti-censorship stack and a three-hop
-         * onion circuit), and moving a user onto them behind their back is not the
-         * same favour as moving them between WARP transports. SHARD is last because
-         * it is the only rung whose exit is a public node.
+         * Psiphon is included as the anti-censorship fallback. The previous ladder
+         * stopped after WARP transports and SHARD, so a carrier that blocked all four
+         * paths had no route left even though Psiphon had its own server pool. During
+         * this automatic rung the saved country is ignored so a stale country pin
+         * cannot empty the candidate pool.
+         *
+         * Tor remains a deliberate user choice because its bootstrap and latency
+         * costs are much higher. SHARD is last because it is the only rung whose exit
+         * is a public node.
          *
          * The ladder is only entered when the transport that FAILED is itself on it —
          * a user who picked Tor and lost it gets their failure reported, not a silent
@@ -8817,6 +8826,7 @@ class MainActivity : Activity() {
             Protocol.MASQUE,
             Protocol.WIREGUARD,
             Protocol.WARP_IN_WARP,
+            Protocol.PSIPHON,
             Protocol.SHARD,
         )
 
