@@ -1,5 +1,6 @@
 package com.kourosh.ae
 
+import android.animation.ArgbEvaluator
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
@@ -13,11 +14,17 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.SweepGradient
 import android.graphics.Typeface
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.os.Build
 import android.text.TextPaint
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -26,27 +33,27 @@ import kotlin.math.sin
 /**
  * The Orbit dial: the one control that matters on the main screen.
  *
- * Layers, outermost first — same list as the approved mock:
- *  1. breathing halo (connected only)
- *  2. two ripple rings that expand and fade (connected only)
- *  3. static hairline ring + slowly rotating dashed ring
- *  4. 60 gauge ticks, every fifth longer, lighting green as the tunnel comes up
- *  5. progress arc — sweeps while connecting, settles at ~85% when connected
- *  6. the glass core: radial specular, body gradient, bevel edge, inner bottom
- *     shadow, and a sheen band that crosses every ~5s
- *  7. contents: shield + "TAP TO CONNECT" when down, an outward radar sweep +
- *     "CONNECTING" while negotiating, session timer when up. The shield carries
- *     a checkmark, so it must never appear before CONNECTED — see
- *     [drawSeekingGlyph].
+ * Kourosh-AE 3.0 turns the glass core into a living 3D orb. Layers, outermost
+ * first:
+ * 1. breathing halo (connected only)
+ * 2. two ripple rings that expand and fade (connected only)
+ * 3. static hairline ring + slowly rotating dashed ring
+ * 4. 60 gauge ticks, lighting up as the tunnel comes up
+ * 5. progress arc: sweeps while connecting, settles at ~86% when connected
+ * 6. the orb: a lit sphere with a fresnel rim in the state accent, flowing
+ *    energy under the glass, a rotating orbital grid, a specular highlight
+ *    that follows the phone's tilt, and a sheen band when connected.
+ *    API 33+ renders the sphere with [OrbCoreShader] (AGSL); older releases
+ *    and any device whose driver rejects the shader use the Canvas path.
+ * 7. contents: shield + "TAP TO CONNECT" when down, an outward radar sweep +
+ *    "CONNECTING" while negotiating, crown + shield + timer when up. The shield
+ *    with a checkmark must never appear before CONNECTED, see [drawSeekingGlyph].
  *
- * GEOMETRY, and why it matters: the halo and the ripples grow *beyond* the ring.
- * The first Orbit build sized the ring to the full view, so the pulse expanded
- * outside the view's own bounds and the parent clipped it — the dial looked like
- * it was bursting out of an invisible box, and the bottom of the glow was simply
- * missing. Every radius is now derived from [RING_RATIO] of the half-extent, so
- * the biggest thing this view ever draws (ripple at 1.30x, halo at ring+22dp)
- * still lands inside the measured square. Nothing is clipped, and the heartbeat
- * scales inside its own frame.
+ * State changes blend the accent colour and the orb's energy over
+ * [STATE_BLEND_MS] instead of snapping.
+ *
+ * GEOMETRY: the halo and the ripples grow beyond the ring, so the view is
+ * measured as ring + [BLEED_DP]. See [onMeasure].
  */
 class OrbitDialView(
     context: Context,
@@ -64,15 +71,30 @@ class OrbitDialView(
                 State.CONNECTING -> "در حال اتصال"
                 State.CONNECTED, State.DEGRADED -> "قطع اتصال"
             }
-            if (value == State.CONNECTED || value == State.DEGRADED) {
-                if (previous != State.CONNECTED && previous != State.DEGRADED) tickReveal = 0f
-                animateTickReveal()
+            val wasActive = previous == State.CONNECTED || previous == State.DEGRADED
+            val isActive = value == State.CONNECTED || value == State.DEGRADED
+            if (isActive) {
+                if (!wasActive) {
+                    tickReveal = 0f
+                    animateTickReveal()
+                } else if (tickReveal < 1f && tickAnimator?.isRunning != true) {
+                    animateTickReveal()
+                }
             } else {
+                tickAnimator?.cancel()
+                tickAnimator = null
                 tickReveal = 0f
             }
-            // Keep the idle orb gently alive so the launch screen never falls
-            // back to a static remnant of the previous theme.
-            startLoop()
+            if (previous != value) animateStateBlend()
+            // The loop tempo is chosen when the animator is created: 1150ms
+            // while CONNECTING, 8s otherwise. Before 3.0 the animator was only
+            // created once, so the connecting wave never sped up. Restart it
+            // whenever the state crosses the CONNECTING boundary.
+            if ((previous == State.CONNECTING) != (value == State.CONNECTING)) {
+                restartLoop()
+            } else {
+                startLoop()
+            }
             invalidate()
         }
 
@@ -100,9 +122,8 @@ class OrbitDialView(
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
-    // The dial is hand-drawn glass, so it needs the same lighting model as the
-    // card backgrounds: white speculars over a dark canvas, dark speculars over
-    // a light one. Read once — the palette cannot change without recreate().
+    // White speculars over a dark canvas, dark speculars over a light one.
+    // Read once: the palette cannot change without recreate().
     private val light = Sculpt.lighting
     private val density = resources.displayMetrics.density
     private val bounds = RectF()
@@ -114,6 +135,35 @@ class OrbitDialView(
     private var loopAnimator: ValueAnimator? = null
     private var tickAnimator: ValueAnimator? = null
 
+    // State blend: accent colour and orb energy ease between states.
+    private val argb = ArgbEvaluator()
+    private var blend = 1f
+    private var blendFromAccent = 0
+    private var blendFromEnergy = 0f
+    private var blendAnimator: ValueAnimator? = null
+
+    // Tilt parallax, fed by the gravity sensor while the dial is visible.
+    private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+    private val tiltSensor: Sensor? = sensorManager?.getDefaultSensor(Sensor.TYPE_GRAVITY)
+        ?: sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private var sensorsOn = false
+    private var tiltX = 0f
+    private var tiltY = 0f
+    private var targetTiltX = 0f
+    private var targetTiltY = 0f
+    private val tiltListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            if (event.values.size < 2) return
+            val g = SensorManager.GRAVITY_EARTH
+            targetTiltX = (-event.values[0] / g).coerceIn(-1f, 1f)
+            targetTiltY = (event.values[1] / g - 0.7f).coerceIn(-1f, 1f)
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+    }
+
+    private var orbShader: OrbCoreShader? = null
+
     private val monoTypeface: Typeface = Typefaces.mono(context)
     private val labelTypeface: Typeface
         get() = Typefaces.medium(context)
@@ -123,13 +173,22 @@ class OrbitDialView(
         isFocusable = true
         isFocusableInTouchMode = false
         contentDescription = "اتصال"
-        // Shadow layers and sweep gradients need software rendering to be exact
-        // on older GPUs; the view is small and repaints at most 20fps.
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
+        if (Build.VERSION.SDK_INT >= 33) {
+            orbShader = OrbCoreShader.createOrNull()
+        }
+        // The AGSL orb needs the hardware pipeline. Without it, shadow layers
+        // and sweep gradients are rendered in software to stay exact on older
+        // GPUs, as before.
+        if (orbShader == null) {
+            setLayerType(LAYER_TYPE_SOFTWARE, null)
+        }
     }
 
     fun applyPalette(next: AppAppearance.Palette) {
         palette = next
+        blendAnimator?.cancel()
+        blendAnimator = null
+        blend = 1f
         invalidate()
     }
 
@@ -141,14 +200,64 @@ class OrbitDialView(
         State.FAILED -> palette.danger
     }
 
+    private fun energyFor(state: State): Float = when (state) {
+        State.DISCONNECTED -> 0.18f
+        State.CONNECTING -> 0.6f
+        State.CONNECTED -> 1f
+        State.DEGRADED -> 0.7f
+        State.FAILED -> 0.35f
+    }
+
+    private fun displayAccent(): Int {
+        val target = accentFor(state)
+        if (blend >= 1f) return target
+        return argb.evaluate(blend, blendFromAccent, target) as Int
+    }
+
+    private fun displayEnergy(): Float {
+        val target = energyFor(state)
+        if (blend >= 1f) return target
+        return blendFromEnergy + (target - blendFromEnergy) * blend
+    }
+
+    private fun animateStateBlend() {
+        // Start from what is on screen now, so a quick second change never jumps.
+        blendFromAccent = if (blend >= 1f) blendFromAccentFallback() else currentBlendAccent()
+        blendFromEnergy = currentBlendEnergy()
+        blendAnimator?.cancel()
+        blendAnimator = null
+        if (!isAttachedToWindow) {
+            blend = 1f
+            return
+        }
+        blend = 0f
+        blendAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = STATE_BLEND_MS
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                blend = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    // Colour and energy of the frame that was last drawn, tracked in onDraw.
+    private var lastDrawnAccent = 0
+    private var lastDrawnEnergy = 0f
+    private var hasDrawn = false
+
+    private fun blendFromAccentFallback(): Int = if (hasDrawn) lastDrawnAccent else accentFor(state)
+    private fun currentBlendAccent(): Int = if (hasDrawn) lastDrawnAccent else accentFor(state)
+    private fun currentBlendEnergy(): Float = if (hasDrawn) lastDrawnEnergy else energyFor(state)
+
     /**
      * Uniform shrink factor for the whole dial, bleed included.
      *
      * The console asks for this when its natural height would overflow the
      * viewport: shrinking the dial is how the screen stops scrolling. Because
-     * the factor scales the measured box AND the ring together, the ratio
-     * between them is untouched, so the halo and ripples keep exactly the
-     * proportional room they have at 1.0 and cannot be cropped by shrinking.
+     * the factor scales the measured box AND the ring together, the halo and
+     * ripples keep their proportional room and cannot be cropped.
      */
     var sizeScale: Float = 1f
         set(value) {
@@ -161,20 +270,10 @@ class OrbitDialView(
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         // The measured box is the RING plus [BLEED_DP], not the ring alone.
-        //
-        // This is the actual cause of the dial having been cropped on all four
-        // sides, and clipChildren=false on the ancestors could never have fixed
-        // it: this view runs with LAYER_TYPE_SOFTWARE, so Android allocates an
-        // offscreen bitmap exactly the size of the VIEW and every pixel outside
-        // it is discarded before any parent gets a say. The halo reaches
-        // HALO_OUTSET+HALO_PULSE past the ring and a ripple reaches
-        // ring*RIPPLE_GROWTH past it, in every direction — with a box of exactly
-        // 2*ring all of that got shaved flat.
-        //
-        // So the canvas is always ring + bleed, and BLEED_DP is derived from
-        // those two reaches rather than guessed. Shrinking goes through
-        // [sizeScale], which scales box and ring by the same factor, so the
-        // bleed can never be squeezed out from under the glow.
+        // In software-layer mode Android allocates an offscreen bitmap exactly
+        // the size of the view, so anything painted outside it is lost. The
+        // halo and ripples reach past the ring, and BLEED_DP is derived from
+        // those reaches.
         val desired = dp(((RING_DP + BLEED_DP) * 2 * sizeScale).roundToInt())
         val size = resolveSize(desired, widthMeasureSpec)
             .coerceAtMost(resolveSize(desired, heightMeasureSpec))
@@ -187,24 +286,18 @@ class OrbitDialView(
         val cx = width / 2f
         val cy = height / 2f
         val half = minOf(width, height) / 2f
-        // The ring is RING_DP scaled by [sizeScale], and the view was measured
-        // (RING_DP + BLEED_DP) * sizeScale, so the glow always has its full
-        // proportional room.
-        //
-        // The second term is the safety net: if a parent hands this view LESS
-        // than it asked for (a narrow screen, an exact-size spec), the ring
-        // shrinks to the largest value that still leaves the bleed intact rather
-        // than letting the outer layers get shaved. Never remove it — it is the
-        // difference between a smaller dial and a cropped one.
+        // Second term: if a parent hands this view less than it asked for, the
+        // ring shrinks so the bleed stays intact. Never remove it.
         val ring = minOf(
             dp(RING_DP) * sizeScale,
             half * RING_DP / (RING_DP + BLEED_DP).toFloat(),
         )
-        // Every inner offset below is authored against RING_DP, so they follow
-        // the ring by this factor instead of staying at a fixed dp and throwing
-        // the proportions off whenever the dial shrinks.
         val geo = ring / dp(RING_DP)
-        val accent = accentFor(state)
+        val accent = displayAccent()
+        val energy = displayEnergy()
+        lastDrawnAccent = accent
+        lastDrawnEnergy = energy
+        hasDrawn = true
         val active = state == State.CONNECTED || state == State.DEGRADED
 
         if (active) {
@@ -214,17 +307,12 @@ class OrbitDialView(
         drawRings(canvas, cx, cy, ring, geo)
         drawTicks(canvas, cx, cy, ring, accent, geo)
         drawArc(canvas, cx, cy, ring, geo)
-        drawCore(canvas, cx, cy, ring, accent, active)
+        drawCore(canvas, cx, cy, ring, accent, active, energy)
         drawContents(canvas, cx, cy, ring, accent, active, geo)
+        if (isFocused) drawFocusRing(canvas, cx, cy, ring, geo)
     }
 
-    /**
-     * Soft breathing bloom just outside the ring.
-     *
-     * Not clamped to the view any more: the mock's halo is `inset:-24px` on the
-     * dial box, so it is *meant* to spill past the ring. Clamping it was what
-     * flattened the glow on the bottom edge.
-     */
+    /** Soft breathing bloom just outside the ring. */
     private fun drawHalo(canvas: Canvas, cx: Float, cy: Float, ring: Float, accent: Int, geo: Float) {
         val radius = ring + dp(HALO_OUTSET_DP) * geo + pulse * dp(HALO_PULSE_DP) * geo
         paint.style = Paint.Style.FILL
@@ -242,11 +330,11 @@ class OrbitDialView(
         paint.shader = null
     }
 
-    /** Two rings, half a cycle apart, expanding 1.0 → 1.30 and fading out. */
+    /** Two rings, half a cycle apart, expanding past the ring and fading out. */
     private fun drawRipples(canvas: Canvas, cx: Float, cy: Float, ring: Float, accent: Int) {
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 1.5f * density
-        for (offset in listOf(0f, 0.5f)) {
+        for (offset in RIPPLE_OFFSETS) {
             val phase = (loopFraction + offset) % 1f
             paint.color = Sculpt.withAlpha(accent, 0.40f * (1f - phase))
             canvas.drawCircle(cx, cy, ring * (1f + phase * RIPPLE_GROWTH), paint)
@@ -273,36 +361,20 @@ class OrbitDialView(
     }
 
     /**
-     * The gauge, matching the mock tick-for-tick.
-     *
-     * The mock has 60 identical ticks (1.5px x 7px), lights the first 44 when
-     * connected, and paints every third tick amber while connecting. The previous
-     * Kotlin version invented long "major" ticks every fifth position and a
-     * 3-tick chasing comet, which is why it read as busier and less clean than
-     * the preview.
+     * The gauge: 60 ticks, the first 44 lit when connected. While CONNECTING a
+     * three-lobe standing wave runs around the rim, driven by the 1150ms loop.
      */
     private fun drawTicks(canvas: Canvas, cx: Float, cy: Float, ring: Float, accent: Int, geo: Float) {
         val litCount = when (state) {
             State.CONNECTED, State.DEGRADED -> (TICK_LIT * tickReveal).roundToInt()
             else -> 0
         }
-        // Standing wave, CONNECTING only.
-        //
-        // Three lobes of light undulate around the rim instead of the old pale
-        // halo, which was a single rotating white glow and read as generic. It is
-        // the same family as the radar sweep in the middle of the core — waves
-        // rather than a spinner — so the two motions belong to each other.
-        //
-        // Cost: none beyond what the gauge already pays. All 60 ticks are drawn
-        // in every state anyway; the wave only changes each tick's colour, alpha
-        // and length. No new shape, no new animator, no extra invalidate: the
-        // 1150ms loop animator that already runs while CONNECTING drives it.
         val wavePhase = loopFraction * TWO_PI
         paint.style = Paint.Style.STROKE
         paint.strokeCap = Paint.Cap.ROUND
         val length = dp(7) * geo
         for (i in 0 until TICK_COUNT) {
-            // -90° so tick 0 sits at the top and the gauge fills clockwise.
+            // -90 degrees so tick 0 sits at the top and the gauge fills clockwise.
             val rad = Math.toRadians((i * (360.0 / TICK_COUNT)) - 90.0)
             val cosA = cos(rad).toFloat()
             val sinA = sin(rad).toFloat()
@@ -315,9 +387,6 @@ class OrbitDialView(
                     paint.setShadowLayer(3f * density, 0f, 0f, Sculpt.withAlpha(accent, 0.8f))
                 }
                 state == State.CONNECTING -> {
-                    // Three lobes: sin(3θ - phase), rectified and sharpened so the
-                    // crests are compact and the troughs go properly dark instead
-                    // of leaving the whole rim half-lit.
                     val theta = (i.toFloat() / TICK_COUNT) * TWO_PI
                     val raw = sin((theta * WAVE_LOBES - wavePhase).toDouble()).toFloat()
                     val w = if (raw <= 0f) 0f else Math.pow(raw.toDouble(), WAVE_SHARPNESS).toFloat()
@@ -327,8 +396,7 @@ class OrbitDialView(
                         paint.color = Sculpt.withAlpha(palette.ink, 0.09f)
                         paint.clearShadowLayer()
                     } else {
-                        // Crests tip into mint, so the wave has a hot centre and
-                        // amber shoulders rather than one flat colour.
+                        // Crests tip into mint: a hot centre with amber shoulders.
                         val hue = if (w > 0.55f) palette.mint else palette.amber
                         paint.color = Sculpt.withAlpha(hue, 0.09f + 0.78f * w)
                         if (w > 0.6f) {
@@ -365,12 +433,6 @@ class OrbitDialView(
         canvas.drawArc(bounds, 0f, 360f, false, paint)
 
         // CONNECTING: two soft crests on a full circle, turning with the wave.
-        //
-        // The old treatment was a single 80–220° arc chasing its own tail, which
-        // is the pale rotating sliver he asked to replace. This is the same
-        // standing-wave idea as the gauge: the stroke covers the whole circle and
-        // the gradient decides where it is visible, so the two crests glide
-        // around instead of one lump sweeping past. Still one drawArc.
         if (state == State.CONNECTING) {
             paint.strokeWidth = 2.2f * density
             val sweepShader = SweepGradient(
@@ -396,7 +458,6 @@ class OrbitDialView(
         }
 
         val sweep = when (state) {
-            // 798 - 110 of a 798 dasharray in the mock ≈ 86% of the circle.
             State.CONNECTED, State.DEGRADED -> 310f
             else -> 0f
         }
@@ -414,41 +475,54 @@ class OrbitDialView(
         paint.strokeCap = Paint.Cap.BUTT
     }
 
-    private fun drawCore(canvas: Canvas, cx: Float, cy: Float, ring: Float, accent: Int, active: Boolean) {
+    /** The orb: drop shadow, lit sphere, orbital grid, specular, sheen, bevel. */
+    private fun drawCore(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        ring: Float,
+        accent: Int,
+        active: Boolean,
+        energy: Float,
+    ) {
         val r = ring * CORE_RATIO
         val base = Sculpt.blend(palette.surface, palette.ink, 0.035f)
+        val px = tiltX * PARALLAX
+        val py = tiltY * PARALLAX
 
-        // Drop shadow under the glass; accent-tinted when the tunnel is up.
+        // Drop shadow; it slides against the tilt so the orb seems to float.
         paint.style = Paint.Style.FILL
+        paint.shader = null
         paint.color = base
         val shadowColor = if (active) {
             Sculpt.withAlpha(accent, 0.38f)
         } else {
             Sculpt.withAlpha(Color.BLACK, light.dialShadowAlpha)
         }
-        paint.setShadowLayer(dp(if (active) 22 else 16).toFloat(), 0f, dp(6).toFloat(), shadowColor)
+        paint.setShadowLayer(
+            dp(if (active) 22 else 16).toFloat(),
+            -px * dp(12),
+            dp(6) - py * dp(8),
+            shadowColor,
+        )
         canvas.drawCircle(cx, cy, r, paint)
         paint.clearShadowLayer()
 
-        // Body gradient, lit from the top-left.
-        paint.shader = LinearGradient(
-            cx - r, cy - r, cx + r * 0.6f, cy + r,
-            intArrayOf(
-                Sculpt.lighten(base, light.dialBodyLift),
-                base,
-                Sculpt.darken(base, light.dialBodyDrop),
-            ),
-            floatArrayOf(0f, 0.46f, 1f),
-            Shader.TileMode.CLAMP,
-        )
-        canvas.drawCircle(cx, cy, r, paint)
-        paint.shader = null
+        val onGpu = canvas.isHardwareAccelerated &&
+            drawShaderBody(canvas, cx, cy, r, accent, base, energy, px, py)
+        if (!onGpu) drawCanvasBody(canvas, cx, cy, r, accent, base, energy, px, py)
 
-        // Specular highlight near the top-left — this is what sells "glass".
+        drawOrbitalGlobe(canvas, cx, cy, r, accent, active, px, py)
+
+        // Specular highlight, following the light. The GPU path already has a
+        // tight specular, so it only gets a soft wide one.
+        val lx = cx + (-0.34f + px) * r
+        val ly = cy + (-0.42f + py) * r
+        paint.style = Paint.Style.FILL
         paint.shader = RadialGradient(
-            cx - r * 0.34f, cy - r * 0.42f, r * 0.95f,
+            lx, ly, r * if (onGpu) 0.9f else 0.7f,
             intArrayOf(
-                Sculpt.withAlpha(light.bevelColor, light.dialSpecular),
+                Sculpt.withAlpha(light.bevelColor, light.dialSpecular * if (onGpu) 0.45f else 1f),
                 Sculpt.withAlpha(light.bevelColor, 0f),
             ),
             floatArrayOf(0f, 1f),
@@ -480,50 +554,109 @@ class OrbitDialView(
             canvas.restoreToCount(save)
         }
 
-        // Inner bottom shadow: the fourth sculpt layer, inside the glass.
-        paint.shader = RadialGradient(
-            cx, cy + r * 0.62f, r * 0.95f,
-            intArrayOf(
-                Sculpt.withAlpha(light.dialInnerShadowColor, light.dialInnerShadow),
-                Sculpt.withAlpha(light.dialInnerShadowColor, 0f),
-            ),
-            floatArrayOf(0f, 1f),
-            Shader.TileMode.CLAMP,
-        )
-        canvas.drawCircle(cx, cy, r, paint)
-        paint.shader = null
-
-        // Live 3D globe: longitude/latitude bands are clipped to the spherical
-        // core and shifted by the orbit phase. This gives the launch screen a
-        // real depth cue while remaining GPU-independent.
-        drawOrbitalGlobe(canvas, cx, cy, r, accent, active)
-
-        // Bevel edge: brighter at the top; accent ring when active.
+        // Bevel: bright on the lit top edge, accent-tinted on the bottom edge.
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 1.4f * density
+        paint.strokeWidth = 1.2f * density
         paint.shader = LinearGradient(
             cx, cy - r, cx, cy + r,
             intArrayOf(
-                Sculpt.withAlpha(light.bevelColor, light.dialEdgeStrong),
-                Sculpt.withAlpha(light.bevelColor, light.dialEdgeSoft),
+                Sculpt.withAlpha(light.bevelColor, 0.35f),
+                Sculpt.withAlpha(light.bevelColor, 0f),
+                Sculpt.withAlpha(accent, 0.25f + 0.40f * energy),
+            ),
+            floatArrayOf(0f, 0.55f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+        canvas.drawCircle(cx, cy, r - paint.strokeWidth / 2f, paint)
+        paint.shader = null
+        paint.style = Paint.Style.FILL
+    }
+
+    /** GPU sphere. Returns false when the shader is not available. */
+    private fun drawShaderBody(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        r: Float,
+        accent: Int,
+        base: Int,
+        energy: Float,
+        px: Float,
+        py: Float,
+    ): Boolean {
+        if (Build.VERSION.SDK_INT < 33) return false
+        val orb = orbShader ?: return false
+        return try {
+            orb.update(cx, cy, r, loopFraction * TWO_PI, px, py, energy, accent, base)
+            paint.style = Paint.Style.FILL
+            paint.color = Color.WHITE
+            paint.shader = orb.shader
+            canvas.drawCircle(cx, cy, r, paint)
+            paint.shader = null
+            true
+        } catch (t: Throwable) {
+            // Never let a driver problem take the main screen down.
+            paint.shader = null
+            orbShader = null
+            false
+        }
+    }
+
+    /** Canvas sphere for API 26-32 and for the software-layer fallback. */
+    private fun drawCanvasBody(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        r: Float,
+        accent: Int,
+        base: Int,
+        energy: Float,
+        px: Float,
+        py: Float,
+    ) {
+        paint.style = Paint.Style.FILL
+        // Spherical body: a radial ramp centred on the lit point, not a flat
+        // linear gradient, so the disc reads as a ball.
+        paint.shader = RadialGradient(
+            cx + (-0.34f + px) * r, cy + (-0.42f + py) * r, r * 1.55f,
+            intArrayOf(
+                Sculpt.lighten(base, light.dialBodyLift),
+                base,
+                Sculpt.darken(base, light.dialBodyDrop),
+            ),
+            floatArrayOf(0f, 0.5f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+        canvas.drawCircle(cx, cy, r, paint)
+
+        // Fresnel rim in the state accent.
+        paint.shader = RadialGradient(
+            cx, cy, r,
+            intArrayOf(
+                Sculpt.withAlpha(accent, 0f),
+                Sculpt.withAlpha(accent, 0f),
+                Sculpt.withAlpha(accent, 0.18f + 0.30f * energy),
+            ),
+            floatArrayOf(0f, 0.72f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+        canvas.drawCircle(cx, cy, r, paint)
+
+        // Inner energy glow, breathing with the loop.
+        paint.shader = RadialGradient(
+            cx, cy + r * 0.25f, r * 0.9f,
+            intArrayOf(
+                Sculpt.withAlpha(accent, (0.14f + 0.08f * pulse) * energy),
+                Sculpt.withAlpha(accent, 0f),
             ),
             floatArrayOf(0f, 1f),
             Shader.TileMode.CLAMP,
         )
         canvas.drawCircle(cx, cy, r, paint)
         paint.shader = null
-        if (active) {
-            paint.strokeWidth = 1.2f * density
-            paint.color = Sculpt.withAlpha(accent, 0.36f)
-            canvas.drawCircle(cx, cy, r - dp(1), paint)
-        }
-        if (isFocused) {
-            paint.strokeWidth = 2f * density
-            paint.color = accent
-            canvas.drawCircle(cx, cy, r + dp(6), paint)
-        }
     }
 
+    /** Rotating latitude/longitude grid inside the orb, shifted by the tilt. */
     private fun drawOrbitalGlobe(
         canvas: Canvas,
         cx: Float,
@@ -531,12 +664,16 @@ class OrbitDialView(
         r: Float,
         accent: Int,
         active: Boolean,
+        px: Float,
+        py: Float,
     ) {
         val save = canvas.save()
         corePath.reset()
         corePath.addCircle(cx, cy, r * 0.985f, Path.Direction.CW)
         canvas.clipPath(corePath)
 
+        val gx = cx + px * r * 0.35f
+        val gy = cy + py * r * 0.35f
         val phase = loopFraction * TWO_PI
         val grid = if (active) Sculpt.withAlpha(accent, 0.18f) else Sculpt.withAlpha(palette.muted, 0.13f)
         paint.style = Paint.Style.STROKE
@@ -545,24 +682,38 @@ class OrbitDialView(
 
         for (i in -2..2) {
             val latitude = i / 3f
-            val y = cy + latitude * r * 0.58f
-            val width = r * kotlin.math.sqrt((1f - latitude * latitude).coerceAtLeast(0.12f))
-            bounds.set(cx - width, y - r * 0.055f, cx + width, y + r * 0.055f)
+            val y = gy + latitude * r * 0.58f
+            val w = r * kotlin.math.sqrt((1f - latitude * latitude).coerceAtLeast(0.12f))
+            bounds.set(gx - w, y - r * 0.055f, gx + w, y + r * 0.055f)
             canvas.drawOval(bounds, paint)
         }
 
         for (i in 0 until 6) {
             val angle = phase.toDouble() + i * Math.PI / 3.0
-            val width = (kotlin.math.abs(kotlin.math.cos(angle)) * r.toDouble() * 0.82).coerceAtLeast(r.toDouble() * 0.06).toFloat()
-            bounds.set(cx - width, cy - r * 0.86f, cx + width, cy + r * 0.86f)
+            val w = (kotlin.math.abs(kotlin.math.cos(angle)) * r.toDouble() * 0.82)
+                .coerceAtLeast(r.toDouble() * 0.06).toFloat()
+            bounds.set(gx - w, gy - r * 0.86f, gx + w, gy + r * 0.86f)
             canvas.drawOval(bounds, paint)
         }
 
         paint.strokeWidth = 1.25f * density
-        paint.color = Sculpt.withAlpha(if (active) accent else light.bevelColor, if (active) 0.38f else 0.22f)
+        paint.color = Sculpt.withAlpha(
+            if (active) accent else light.bevelColor,
+            if (active) 0.38f else 0.22f,
+        )
         bounds.set(cx - r * 0.89f, cy - r * 0.89f, cx + r * 0.89f, cy + r * 0.89f)
         canvas.drawArc(bounds, -58f + phase * 57.3f, 72f, false, paint)
         canvas.restoreToCount(save)
+        paint.style = Paint.Style.FILL
+    }
+
+    private fun drawFocusRing(canvas: Canvas, cx: Float, cy: Float, ring: Float, geo: Float) {
+        paint.style = Paint.Style.STROKE
+        paint.shader = null
+        paint.strokeWidth = 2f * density
+        paint.color = Sculpt.withAlpha(palette.primary, 0.85f)
+        canvas.drawCircle(cx, cy, ring + dp(6) * geo, paint)
+        paint.style = Paint.Style.FILL
     }
 
     private fun drawContents(
@@ -579,20 +730,9 @@ class OrbitDialView(
             return
         }
 
-        // CONNECTING gets its own glyph, never the shield.
-        //
-        // The shield carries a checkmark, and a checkmark means "done" in every
-        // UI a user has ever seen — so during a 20-second Psiphon handshake the
-        // dial was actively lying, and people reported being connected while the
-        // tunnel was still negotiating. Nothing that resolves to a tick may be
-        // drawn before State.CONNECTED.
-        //
-        // What replaces it: three arcs of an expanding radar sweep, drawn in
-        // amber, each one further out and fainter, cycling on the same loop
-        // fraction that already drives the arc and the pulse. It reads as
-        // "reaching out, no answer yet" and cannot be mistaken for a success
-        // mark. Free to animate — the loop animator is already running in this
-        // state, so this adds no timer and no wakeups.
+        // CONNECTING gets its own glyph, never the shield: the shield carries a
+        // checkmark, and nothing that reads as "done" may appear before
+        // State.CONNECTED.
         if (state == State.CONNECTING) {
             drawSeekingGlyph(canvas, cx, cy, geo)
 
@@ -601,12 +741,12 @@ class OrbitDialView(
             textPaint.textSize = 10.5f * density * geo
             textPaint.letterSpacing = if (AppLanguage.current() != "en") 0f else 0.19f
             textPaint.color = palette.amberText
-            // The percentage stays, appended to the caption instead of occupying
-            // the middle of the dial: it is real information when the transport
-            // reports it, and joining it to the word keeps a number from ever
-            // sitting alone where the tick used to be. Transports that cannot
-            // measure progress print no figure (see progressPercent).
-            val caption = if (progressPercent >= 0) Strings.tf("CONNECTING %s%%", progressPercent) else Strings.t("CONNECTING")
+            // Transports that cannot measure progress print no figure.
+            val caption = if (progressPercent >= 0) {
+                Strings.tf("CONNECTING %s%%", progressPercent)
+            } else {
+                Strings.t("CONNECTING")
+            }
             canvas.drawText(caption, cx, cy + dp(26) * geo, textPaint)
             textPaint.letterSpacing = spacing(0f)
             return
@@ -641,7 +781,6 @@ class OrbitDialView(
             close()
         }
         canvas.drawPath(path, paint)
-        // The tick inside the shield, as in the mock.
         paint.strokeWidth = 1.7f * density
         canvas.drawPath(Path().apply {
             moveTo(cx - shieldW * 0.15f, shieldTop + shieldH * 0.50f)
@@ -654,8 +793,6 @@ class OrbitDialView(
         textPaint.textAlign = Paint.Align.CENTER
         textPaint.textSize = 10.5f * density * geo
         textPaint.letterSpacing = if (AppLanguage.current() != "en") 0f else 0.19f
-        // CONNECTING never reaches here — it returned above with its own glyph —
-        // so only the resting and failed captions are left.
         textPaint.color = when (state) {
             State.FAILED -> palette.dangerText
             else -> Sculpt.withAlpha(palette.faint, 0.95f)
@@ -668,7 +805,6 @@ class OrbitDialView(
         textPaint.letterSpacing = spacing(0f)
     }
 
-    /** Premium connected state: crown, shield/check and a clear live label. */
     private fun drawActiveBadge(
         canvas: Canvas,
         cx: Float,
@@ -698,7 +834,11 @@ class OrbitDialView(
             close()
         }
         canvas.drawPath(crown, paint)
-        canvas.drawLine(cx - dp(17) * geo, crownY + dp(15) * geo, cx + dp(17) * geo, crownY + dp(15) * geo, paint)
+        canvas.drawLine(
+            cx - dp(17) * geo, crownY + dp(15) * geo,
+            cx + dp(17) * geo, crownY + dp(15) * geo,
+            paint,
+        )
 
         val shield = Path().apply {
             moveTo(cx, shieldTop)
@@ -752,29 +892,12 @@ class OrbitDialView(
         }
         textPaint.letterSpacing = spacing(0f)
         paint.strokeCap = Paint.Cap.BUTT
+        paint.strokeJoin = Paint.Join.MITER
     }
 
-    /**
-     * The CONNECTING glyph: an outward radar sweep.
-     *
-     * Replaces the shield-with-tick, which read as "connected" while the tunnel
-     * was still negotiating. Three arcs leave a small solid core and travel
-     * outward, each fading as it goes, so the motion is unmistakably "still
-     * trying" — an open shape with no terminal state, the visual opposite of a
-     * checkmark.
-     *
-     * The arcs are drawn on [loopFraction], which the loop animator already
-     * advances in this state (1150ms per cycle), so nothing new is scheduled and
-     * the cost is three drawArc calls per existing frame.
-     *
-     * Deliberately arcs facing up rather than full circles: a full ring at this
-     * radius collides with the gauge ticks and the progress arc, and a partial
-     * arc also gives the sweep a direction.
-     */
+    /** Radar sweep for CONNECTING: three arcs leaving the core in sequence. */
     private fun drawSeekingGlyph(canvas: Canvas, cx: Float, cy: Float, geo: Float) {
         val amber = palette.amber
-        // The core dot: breathes on the same pulse as the halo, so the glyph has
-        // a fixed anchor and the eye has something to hold while the arcs move.
         paint.style = Paint.Style.FILL
         paint.shader = null
         paint.color = Sculpt.withAlpha(amber, 0.85f)
@@ -785,13 +908,8 @@ class OrbitDialView(
         val base = dp(7) * geo
         val step = 7.5f * density * geo
         for (index in 0 until 3) {
-            // Each arc is a third of a cycle behind the one inside it, so they
-            // leave the core in sequence instead of pulsing together.
             val phase = (loopFraction + index / 3f) % 1f
             val radius = base + step * index + phase * step
-            // Fades with distance AND with its own phase: an arc is brightest as
-            // it leaves and gone by the time it reaches the next arc's start, so
-            // the ring count reads as three no matter where the cycle is.
             val alpha = (0.72f - index * 0.18f) * (1f - phase)
             if (alpha <= 0.02f) continue
             paint.color = Sculpt.withAlpha(amber, alpha)
@@ -802,87 +920,12 @@ class OrbitDialView(
                 cx + radius,
                 cy - dp(6) * geo + radius,
             )
-            // -128° start over a 76° sweep: an arc centred on straight up, wide
-            // enough to read as a wavefront and narrow enough to stay clear of
-            // the caption below.
             canvas.drawArc(bounds, -128f, 76f, false, paint)
         }
         paint.strokeCap = Paint.Cap.BUTT
     }
 
-    override fun onTouchEvent(event: MotionEvent): Boolean = when (event.actionMasked) {
-        MotionEvent.ACTION_DOWN -> {
-            animate().scaleX(0.965f).scaleY(0.965f).setDuration(110).start()
-            true
-        }
-        MotionEvent.ACTION_UP -> {
-            animate().scaleX(1f).scaleY(1f).setDuration(190).start()
-            performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-            performClick()
-            true
-        }
-        MotionEvent.ACTION_CANCEL -> {
-            animate().scaleX(1f).scaleY(1f).setDuration(190).start()
-            true
-        }
-        else -> super.onTouchEvent(event)
-    }
-
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
-            performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-            performClick()
-            return true
-        }
-        return super.onKeyDown(keyCode, event)
-    }
-
-    override fun performClick(): Boolean {
-        super.performClick()
-        return true
-    }
-
-    override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: android.graphics.Rect?) {
-        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
-        invalidate()
-    }
-
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        // A view can be detached mid-connection (screen off, returning from
-        // Recents) and reattached still CONNECTED. Without this the halo and
-        // sheen stay frozen.
-        startLoop()
-    }
-
-    override fun onDetachedFromWindow() {
-        stopLoop()
-        tickAnimator?.cancel()
-        tickAnimator = null
-        super.onDetachedFromWindow()
-    }
-
-    private fun startLoop() {
-        if (loopAnimator != null) return
-        loopAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = if (state == State.CONNECTING) 1_150 else 8_000
-            repeatCount = ValueAnimator.INFINITE
-            interpolator = null
-            addUpdateListener {
-                loopFraction = it.animatedFraction
-                pulse = if (loopFraction < 0.5f) loopFraction * 2f else (1f - loopFraction) * 2f
-                invalidate()
-            }
-            start()
-        }
-    }
-
-    private fun stopLoop() {
-        loopAnimator?.cancel()
-        loopAnimator = null
-        loopFraction = 0f
-        pulse = 0f
-    }
+    private fun spacing(v: Float): Float = if (AppLanguage.current() != "en") 0f else v
 
     private fun animateTickReveal() {
         tickAnimator?.cancel()
@@ -896,85 +939,192 @@ class OrbitDialView(
         }
     }
 
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            if (!isEnabled) return true
+            performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+            performClick()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+
+    override fun onFocusChanged(
+        gainFocus: Boolean,
+        direction: Int,
+        previouslyFocusedRect: android.graphics.Rect?,
+    ) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        invalidate()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        // A view can be detached mid-connection and reattached still
+        // CONNECTED. Without this the halo and sheen stay frozen.
+        startLoop()
+    }
+
+    override fun onDetachedFromWindow() {
+        stopLoop()
+        tickAnimator?.cancel()
+        tickAnimator = null
+        blendAnimator?.cancel()
+        blendAnimator = null
+        blend = 1f
+        super.onDetachedFromWindow()
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        // Before 3.0 the loop kept redrawing at full frame rate while the app
+        // sat in the background. Pause it with the window.
+        if (visibility == VISIBLE) startLoop(visibility) else stopLoop()
+    }
+
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        if (isVisible) startLoop() else stopLoop()
+    }
+
+    private fun loopDuration(): Long =
+        if (state == State.CONNECTING) CONNECTING_LOOP_MS else IDLE_LOOP_MS
+
+    private fun startLoop(windowVis: Int = windowVisibility) {
+        if (loopAnimator != null) return
+        // Never run while detached or hidden: an animator started here would
+        // hold the view and burn frames nobody sees.
+        if (!isAttachedToWindow || windowVis != VISIBLE || visibility != VISIBLE) return
+        loopAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = loopDuration()
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = null
+            addUpdateListener {
+                loopFraction = it.animatedFraction
+                pulse = if (loopFraction < 0.5f) loopFraction * 2f else (1f - loopFraction) * 2f
+                tiltX += (targetTiltX - tiltX) * TILT_SMOOTHING
+                tiltY += (targetTiltY - tiltY) * TILT_SMOOTHING
+                invalidate()
+            }
+            start()
+        }
+        startTilt()
+    }
+
+    /** Switch the loop tempo without a visible jump in phase. */
+    private fun restartLoop() {
+        val keep = loopFraction
+        loopAnimator?.cancel()
+        loopAnimator = null
+        startLoop()
+        loopAnimator?.setCurrentFraction(keep)
+    }
+
+    private fun stopLoop() {
+        loopAnimator?.cancel()
+        loopAnimator = null
+        loopFraction = 0f
+        pulse = 0f
+        stopTilt()
+    }
+
+    private fun startTilt() {
+        if (sensorsOn) return
+        // Respect "remove animations": no parallax when animators are off.
+        if (!ValueAnimator.areAnimatorsEnabled()) return
+        val manager = sensorManager ?: return
+        val sensor = tiltSensor ?: return
+        sensorsOn = manager.registerListener(tiltListener, sensor, SensorManager.SENSOR_DELAY_UI)
+    }
+
+    private fun stopTilt() {
+        if (!sensorsOn) return
+        sensorManager?.unregisterListener(tiltListener)
+        sensorsOn = false
+        targetTiltX = 0f
+        targetTiltY = 0f
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        // A disabled dial must not toggle the tunnel. Consume the touch so it
+        // does not fall through to the view behind.
+        if (!isEnabled) return isClickable
+        return when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                animate().scaleX(0.965f).scaleY(0.965f).setDuration(110).start()
+                true
+            }
+            MotionEvent.ACTION_UP -> {
+                animate().scaleX(1f).scaleY(1f).setDuration(190).start()
+                // Only a release inside the dial counts as a tap. Before 3.0 a
+                // finger dragged off the dial still toggled the VPN.
+                val inside = event.x >= 0f && event.x <= width.toFloat() &&
+                    event.y >= 0f && event.y <= height.toFloat()
+                if (inside) {
+                    performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    performClick()
+                }
+                true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                animate().scaleX(1f).scaleY(1f).setDuration(190).start()
+                true
+            }
+            else -> super.onTouchEvent(event)
+        }
+    }
+
     private fun dp(value: Int): Int = (value * density).roundToInt()
 
     companion object {
         const val TICK_COUNT = 60
-        /** Ticks lit when connected — 44 of 60, as in the mock. */
+        /** Ticks lit when connected: 44 of 60. */
         const val TICK_LIT = 44
-        /** How far a ripple grows past the ring (mock: scale(1) → scale(1.32)). */
+        /** How far a ripple grows past the ring. */
         const val RIPPLE_GROWTH = 0.32f
         /**
-         * Ring radius in dp.
-         *
-         * The mock drew a 266dp box (r = 133dp). That made the whole console
-         * 840dp tall on a 1080x2400 phone, ~70dp more than the viewport, so the
-         * main screen scrolled and part of the action bar sat below the fold.
-         * 112dp is the largest ring that lets the full column fit without
-         * scrolling while keeping the dial the dominant element on the screen.
+         * Ring radius in dp. 112dp is the largest ring that lets the full
+         * console fit without scrolling on a 1080x2400 phone.
          */
         const val RING_DP = 112
         /** How far past the ring the halo's outer edge sits, at rest. */
         const val HALO_OUTSET_DP = 24
         /** Extra reach the halo gains at the top of its breath. */
         const val HALO_PULSE_DP = 7
-        /**
-         * Slack so a feathered edge or a stroke's outer half never lands on the
-         * last row of pixels. 4dp covers the ripple's 1.5px stroke and the
-         * tick shadow at any density.
-         */
+        /** Slack so a feathered edge never lands on the last row of pixels. */
         const val BLEED_MARGIN_DP = 4
         /**
-         * Extra radius the view is measured with, beyond the ring, so the layers
-         * that deliberately paint outside the ring have canvas to land on.
-         *
-         * DERIVED, not hand-tuned: this used to be a magic 46 that had to be
-         * re-checked by hand every time the ring changed, and getting it wrong is
-         * exactly what shaved the glow flat on all four sides. Now it is computed
-         * from the two things that actually paint outside the ring —
-         *
-         *   - a ripple, reaching ring * RIPPLE_GROWTH past the ring
-         *   - the halo, reaching HALO_OUTSET + HALO_PULSE past the ring
-         *
-         * — so changing RING_DP alone can never crop the dial again.
+         * Extra radius the view is measured with, beyond the ring. Derived from
+         * the two layers that paint outside the ring, so changing RING_DP alone
+         * can never crop the dial.
          */
         val BLEED_DP: Int = ceil(
             maxOf(RING_DP * RIPPLE_GROWTH, (HALO_OUTSET_DP + HALO_PULSE_DP).toFloat())
         ).toInt() + BLEED_MARGIN_DP
-        /**
-         * Floor for [sizeScale]. Below this the dial stops reading as the primary
-         * control, so a screen too short even for the shrunk dial is allowed to
-         * scroll instead — scrolling is recoverable, an unreachable connect
-         * button is not.
-         */
+        /** Floor for [sizeScale]. Below this the dial stops reading as primary. */
         const val MIN_SIZE_SCALE = 0.78f
-        /** Core radius as a fraction of the ring: 99dp core / 133dp ring. */
+        /** Core radius as a fraction of the ring. */
         const val CORE_RATIO = 0.744f
-        /**
-         * 2π as a float.
-         *
-         * A literal rather than `(Math.PI * 2).toFloat()`: `const val` needs a
-         * compile-time constant, and a Java static field is not one.
-         */
+
+        private val RIPPLE_OFFSETS = floatArrayOf(0f, 0.5f)
+        /** 2pi as a float literal (const val needs a compile-time constant). */
         private const val TWO_PI = 6.2831855f
-        /**
-         * Lobes in the CONNECTING standing wave.
-         *
-         * Three is deliberate: one lobe is a spinner, two reads as a propeller,
-         * and four or more makes the 60-tick gauge look like it is flickering
-         * because each crest gets too few ticks to resolve.
-         */
+        /** Lobes in the CONNECTING standing wave. */
         private const val WAVE_LOBES = 3f
-        /**
-         * Exponent applied to the rectified sine.
-         *
-         * A raw sine leaves the whole rim at half brightness, which is exactly
-         * the flat pale glow this replaces. 2.4 pulls the troughs down to the
-         * resting tick colour and keeps the crests compact.
-         */
+        /** Exponent applied to the rectified sine, keeps crests compact. */
         private const val WAVE_SHARPNESS = 2.4
+        private const val CONNECTING_LOOP_MS = 1_150L
+        private const val IDLE_LOOP_MS = 8_000L
+        /** State blend time. Within the 300ms motion budget. */
+        private const val STATE_BLEND_MS = 280L
+        /** How far the light and the grid move at full tilt, in orb radii. */
+        private const val PARALLAX = 0.22f
+        /** Per-frame low-pass on the tilt, so sensor jitter never shows. */
+        private const val TILT_SMOOTHING = 0.12f
     }
 }
-
-/** Neon letter-spacing scatters Persian's joined letters — clamp for Persian. */
-private fun spacing(v: Float): Float = if (AppLanguage.current() != "en") 0f else v
