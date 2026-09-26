@@ -20,57 +20,34 @@ import android.content.res.ColorStateList
 import android.os.Build
 import android.os.SystemClock
 import android.view.View
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * Shared drawing helpers for the Orbit visual language.
+ * Shared drawing helpers for the Kourosh-AE 3.0 "imperial holo" look.
  *
- * A "sculpted" control is not one colour — it is four layers, exactly as the
- * approved mock described them:
- *   1. a specular highlight near the top-left (convex glass),
- *   2. a body gradient,
- *   3. a one-pixel light line along the top edge,
- *   4. an inner shadow at the bottom that creates depth.
- * Pressing inverts 3 and 4 so the surface genuinely sinks instead of only
- * shrinking.
- *
- * The old implementation faked this with a plain [GradientDrawable], which can
- * only do a linear body gradient — no radial specular, no inner shadow. That is
- * why the shipped buttons looked flat next to the HTML preview. [GlassDrawable]
- * below draws all four layers, and every surface in the app goes through it.
+ * Every surface in the app goes through [GlassDrawable]: a chamfered
+ * (cut-corner) panel with an ornate gold frame, a dark glass body with a top
+ * sheen and an inner shadow, and, when the caller passes an accent, a neon
+ * inner glow in that accent. Large panels get a second inner frame and gold
+ * diamond studs, like the stat cards in the reference design.
  */
 object Sculpt {
 
     /**
-     * How a raised surface is lit.
-     *
-     * The dark palette builds depth with a white specular highlight on the top
-     * edge and a black inner shadow at the bottom. On a white card both of those
-     * disappear — white-on-white is invisible, and a black inner shadow on white
-     * reads as dirt rather than depth.
-     *
-     * So the light palette inverts the model instead of recolouring it:
-     *   - the body gradient runs the other way (the surface is brightest where
-     *     the light hits it, which on a light page is the top, but the *step* is
-     *     much smaller because there is less headroom above white),
-     *   - the specular highlight is dropped ([specular] = 0),
-     *   - the inner bottom shadow is nearly dropped, and depth comes from a real
-     *     outer drop shadow ([elevationDp]) instead,
-     *   - the bevel line along the top edge becomes a darker hairline at the
-     *     bottom, because on light surfaces the *shadowed* edge is what the eye
-     *     reads as an edge.
-     *
-     * Held as a single mutable field set once by [AppAppearance.load], because
-     * the 26 call sites of [sculptedBackground] do not have a palette in scope
-     * and should not each have to be told which theme is active.
+     * How a raised surface is lit. The dark palette builds depth with a sheen at
+     * the top and an inner shadow at the bottom. The light palette uses a real
+     * outer drop shadow ([elevationDp]) instead. Held as a single mutable field
+     * set once by [AppAppearance.load].
      */
     data class Lighting(
         /** Body gradient: how much lighter the top is than the fill. */
         val topLift: Float,
         /** Body gradient: how much darker the bottom is than the fill. */
         val bottomDrop: Float,
-        /** Radial white specular at the top-left. 0 disables it. */
+        /** White sheen at the top. 0 disables it. */
         val specular: Float,
         /** Inner shadow at the bottom of a raised surface. */
         val innerShadow: Float,
@@ -80,7 +57,7 @@ object Sculpt {
         val bevel: Float,
         /** Bevel line alpha on a pressed surface. */
         val pressedBevel: Float,
-        /** Colour of the bevel line — white on dark, black on light. */
+        /** Colour of the bevel line. */
         val bevelColor: Int,
         /** Outer drop shadow radius in dp. 0 disables it (dark palette). */
         val elevationDp: Float,
@@ -88,27 +65,22 @@ object Sculpt {
         val elevationAlpha: Float,
         /** Default hairline when a caller passes neither accent nor stroke. */
         val defaultOutline: Int,
-        /** Fallback fill tint for recessed wells. */
+        /** Fallback outline for recessed wells. */
         val recessOutline: Int,
         // --- OrbitDialView only ---------------------------------------------
-        // The dial is a hand-drawn glass disc rather than a rounded rect, so it
-        // has its own set of alphas. They are here and not in the view because
-        // the whole point of Lighting is that one object decides how depth is
-        // faked, and a second set of literals inside the dial is how a theme
-        // drifts out of sync.
-        /** Drop shadow opacity under the idle dial. */
+        /** Drop shadow opacity under the dial. */
         val dialShadowAlpha: Float,
-        /** Radial specular on the glass disc. */
+        /** Specular on the glass core. */
         val dialSpecular: Float,
         /** Travelling sheen band, connected state only. */
         val dialSheen: Float,
-        /** Inner shadow at the bottom of the disc. */
+        /** Inner shadow at the bottom of the core. */
         val dialInnerShadow: Float,
         /** Colour of that inner shadow. */
         val dialInnerShadowColor: Int,
-        /** Bevel edge alpha at the top of the disc. */
+        /** Bevel edge alpha at the top of the core. */
         val dialEdgeStrong: Float,
-        /** Bevel edge alpha at the bottom of the disc. */
+        /** Bevel edge alpha at the bottom of the core. */
         val dialEdgeSoft: Float,
         /** Multiplier applied to every [Sculpt.recess] depth. */
         val recessScale: Float,
@@ -117,101 +89,69 @@ object Sculpt {
         /** Dial body gradient: drop at the bottom. */
         val dialBodyDrop: Float,
         /**
-         * How the timer digits are shifted away from the accent so they read on
-         * the glass. Positive lightens (dark palette: a pale mint glowing on
-         * black), negative darkens (light palette: a deep teal on white). This is
-         * the largest text in the app, so it does not get to be approximate.
+         * How dial text is shifted away from the accent so it reads on the glass.
+         * Positive lightens (dark palette), negative darkens (light palette).
          */
         val dialTextShift: Float,
     )
 
     val DARK_LIGHTING = Lighting(
-        topLift = 0.09f,
-        bottomDrop = 0.09f,
-        specular = 0.13f,
-        innerShadow = 0.30f,
-        pressedInnerShadow = 0.45f,
+        topLift = 0.07f,
+        bottomDrop = 0.14f,
+        specular = 0.075f,
+        innerShadow = 0.32f,
+        pressedInnerShadow = 0.48f,
         bevel = 0.22f,
         pressedBevel = 0.05f,
         bevelColor = Color.WHITE,
         elevationDp = 0f,
         elevationAlpha = 0f,
-        defaultOutline = Color.argb(28, 255, 255, 255),
-        recessOutline = Color.argb(20, 255, 255, 255),
-        dialShadowAlpha = 0.65f,
-        dialSpecular = 0.16f,
-        dialSheen = 0.085f,
-        dialInnerShadow = 0.30f,
+        defaultOutline = Color.argb(46, 212, 166, 74),
+        recessOutline = Color.argb(34, 212, 166, 74),
+        dialShadowAlpha = 0.70f,
+        dialSpecular = 0.14f,
+        dialSheen = 0.09f,
+        dialInnerShadow = 0.40f,
         dialInnerShadowColor = Color.BLACK,
         dialEdgeStrong = 0.24f,
         dialEdgeSoft = 0.05f,
         recessScale = 1f,
         dialBodyLift = 0.11f,
         dialBodyDrop = 0.16f,
-        dialTextShift = 0.55f,
+        dialTextShift = 0.50f,
     )
 
-    /**
-     * Light-palette lighting. Numbers, not vibes:
-     * a white card can only go 0% brighter, so [topLift] is tiny and the visible
-     * separation is carried by [elevationDp] — an 8dp shadow at 22% under a
-     * white card on a `#EEF1F4` page, which is the same figure the HTML preview
-     * used (`0 6px 16px -8px rgba(17,26,31,.20)`).
-     */
     val LIGHT_LIGHTING = Lighting(
         topLift = 0.02f,
         bottomDrop = 0.05f,
-        specular = 0f,
+        specular = 0.35f,
         innerShadow = 0.05f,
         pressedInnerShadow = 0.14f,
         bevel = 0.05f,
         pressedBevel = 0.10f,
         bevelColor = Color.BLACK,
-        // 6dp, not the preview's 8: the shadow has to be reserved out of the
-        // view's own box (see GlassDrawable.draw), and every dp of blur costs two
-        // dp of card height. 6dp at 24% is the same visual weight as 8dp at 20%
-        // and gives the layout 4dp back.
         elevationDp = 6f,
-        elevationAlpha = 0.24f,
-        defaultOutline = Color.argb(28, 17, 26, 31),
-        recessOutline = Color.argb(22, 17, 26, 31),
-        // A light dial cannot be lit by adding white — the disc is already near
-        // white. Depth comes from a soft outer shadow (0.18, well below the dark
-        // model's 0.65 so it reads as paper, not soot) and a black bevel that is
-        // strong at the BOTTOM. The travelling sheen is kept but halved: on a
-        // light disc it is a subtle wipe rather than a glint.
-        dialShadowAlpha = 0.18f,
-        dialSpecular = 0.05f,
-        dialSheen = 0.04f,
-        dialInnerShadow = 0.07f,
+        elevationAlpha = 0.22f,
+        defaultOutline = Color.argb(70, 176, 133, 43),
+        recessOutline = Color.argb(52, 176, 133, 43),
+        dialShadowAlpha = 0.22f,
+        dialSpecular = 0.30f,
+        dialSheen = 0.05f,
+        dialInnerShadow = 0.08f,
         dialInnerShadowColor = Color.BLACK,
         dialEdgeStrong = 0.06f,
         dialEdgeSoft = 0.14f,
-        // 0.22: the deepest call site asks for 0.30, which on white becomes
-        // darken(0.066) = #EEEEEE — the canvas grey. So the deepest well on the
-        // light palette is exactly "as dark as the page", and the shallower ones
-        // land between that and white. Nothing sinks below the page, which is
-        // what stops a light theme looking like it has holes in it.
         recessScale = 0.22f,
         dialBodyLift = 0.03f,
         dialBodyDrop = 0.06f,
-        // darken(mint #0E9C82, 0.30) = #0A6D5B: 6.9:1 on the white dial face.
-        dialTextShift = -0.30f,
+        dialTextShift = -0.32f,
     )
 
-    /**
-     * The active lighting model. Written once per Activity by
-     * [AppAppearance.load]; read on every draw.
-     *
-     * `@Volatile` because views draw on the main thread but the palette is
-     * loaded in `onCreate` — the write must be visible without a fence
-     * assumption, and a stale read would draw dark-model highlights on a white
-     * card for one frame.
-     */
+    /** The active lighting model. Written once per Activity by [AppAppearance.load]. */
     @Volatile
     var lighting: Lighting = DARK_LIGHTING
 
-    /** Alpha-blend [overlay] onto [base]. Used to fake translucency on opaque views. */
+    /** Alpha-blend [overlay] onto [base]. */
     fun blend(base: Int, overlay: Int, alpha: Float): Int {
         val a = alpha.coerceIn(0f, 1f)
         val r = ((Color.red(base) * (1 - a)) + (Color.red(overlay) * a)).roundToInt()
@@ -223,24 +163,13 @@ object Sculpt {
     fun withAlpha(color: Int, alpha: Float): Int =
         Color.argb((alpha.coerceIn(0f, 1f) * 255).roundToInt(), Color.red(color), Color.green(color), Color.blue(color))
 
-    /** Lift a colour towards white — the highlight edge of a bevel. */
+    /** Lift a colour towards white. */
     fun lighten(color: Int, amount: Float): Int = blend(color, Color.WHITE, amount)
 
-    /** Push a colour towards black — the shadow edge of a bevel. */
+    /** Push a colour towards black. */
     fun darken(color: Int, amount: Float): Int = blend(color, Color.BLACK, amount)
 
-    /**
-     * A surface that should read as sunk *below* [base] — the transport rail's
-     * well, the recessed halves of the cards, a pressed cell.
-     *
-     * Why this is not just `darken`: the call sites were written against the dark
-     * palette, where `surface` is `#0B1116` and darkening it 30% lands on a near
-     * black well that reads as depth. Applying the same 30% to a white card gives
-     * `#B3B3B3` — a mid grey slab in the middle of a white page, which reads as a
-     * disabled area rather than a well. On a light palette the same *perceptual*
-     * step needs a much smaller number, so [Lighting.recessScale] carries it and
-     * each call site keeps stating its intent ("sink this a lot" / "a little").
-     */
+    /** A surface that should read as sunk below [base]. */
     fun recess(base: Int, depth: Float): Int = darken(base, depth * lighting.recessScale)
 
     /** [color] moved to where it can be read as text on this palette's glass. */
@@ -261,12 +190,8 @@ object Sculpt {
     }
 
     /**
-     * The standard Kourosh-AE raised glass surface. [radius] is in dp.
-     *
-     * [accent] is a lit outline used for active states and wins over [stroke].
-     * [pressed] forces the recessed lighting for callers that manage their own
-     * state; everyone else gets a state list, so any clickable view using this
-     * background genuinely sinks on touch instead of only scaling.
+     * A raised panel with a pressed state. [accent] lights the neon inner glow;
+     * without it the panel still gets its gold frame.
      */
     fun sculptedBackground(
         density: Float,
@@ -278,7 +203,7 @@ object Sculpt {
         pressed: Boolean = false,
     ): Drawable {
         val outline = accent ?: stroke ?: lighting.defaultOutline
-        fun layer(down: Boolean) = GlassDrawable(
+        fun layer(down: Boolean): Drawable = GlassDrawable(
             density = density,
             fill = fill,
             radiusDp = radius.toFloat(),
@@ -288,10 +213,6 @@ object Sculpt {
             glow = accent,
         )
         if (pressed) return layer(true)
-        // StateListDrawable, not a bare GlassDrawable: this is what gives every
-        // button in the app the "press = sink inwards" behaviour for free. Views
-        // that are not clickable simply never enter state_pressed and always
-        // render the raised layer.
         return StateListDrawable().apply {
             setEnterFadeDuration(0)
             setExitFadeDuration(140)
@@ -300,7 +221,7 @@ object Sculpt {
         }
     }
 
-    /** A recessed well: the inverse lighting, used for the transport rail track. */
+    /** A well sunk into its parent. */
     fun recessedBackground(
         density: Float,
         fill: Int,
@@ -315,12 +236,7 @@ object Sculpt {
         pressed = true,
     )
 
-    /**
-     * Wrap a sculpted surface in a ripple so touch feedback survives.
-     *
-     * selectableItemBackground draws nothing over a custom drawable on some OEM
-     * skins, so the ripple is explicit and always has a mask.
-     */
+    /** [sculptedBackground] with a touch ripple on top. */
     fun sculptedRipple(
         density: Float,
         fill: Int,
@@ -330,7 +246,7 @@ object Sculpt {
     ): RippleDrawable {
         val mask = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = radius * density
+            cornerRadius = radius * density * 0.5f
             setColor(Color.WHITE)
         }
         return RippleDrawable(
@@ -342,12 +258,15 @@ object Sculpt {
 }
 
 /**
- * The four-layer glass surface from the approved mock, drawn by hand.
- *
- * Layer order matches CSS paint order in the preview:
- *   body gradient → radial specular → inner bottom shadow → bevel stroke.
- * [pressed] swaps the vertical lighting and moves the inner shadow to the top,
- * which is what makes a press read as "sunk in" rather than "faded".
+ * The imperial panel. Layers, back to front:
+ * 0. outer drop shadow (light palette only),
+ * 1. body gradient,
+ * 2. accent wash from the bottom, top sheen, inner shadow, neon inner glow
+ *    (all clipped to the panel),
+ * 3. gold gradient frame,
+ * 4. inner frame line (accent, or dark gold on large panels),
+ * 5. gold diamond studs on large panels.
+ * Pressing darkens the body, drops the sheen and brightens the glow.
  */
 class GlassDrawable(
     private val density: Float,
@@ -361,184 +280,202 @@ class GlassDrawable(
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
-    private val shadowRect = RectF()
-    private val clip = Path()
+    private val inner = RectF()
+    private val shape = Path()
+    private val innerShape = Path()
+    private val stud = Path()
     private val light = Sculpt.lighting
 
     override fun draw(canvas: Canvas) {
         val b = bounds
         if (b.width() <= 0 || b.height() <= 0) return
-        val strokeWidth = (strokeWidthDp * density).coerceAtLeast(1f)
-        val inset = strokeWidth / 2f
-        // An outer drop shadow needs room to fall into, or it is clipped by the
-        // view's own bounds. Reserve it from the drawable's box rather than
-        // asking every call site for padding.
-        val drop = if (light.elevationDp > 0f && !pressed) light.elevationDp * density else 0f
-        // The reserve is symmetric, top and bottom, even though the shadow only
-        // falls downwards. An asymmetric reserve was the first attempt and it
-        // looked wrong for a reason that is obvious in hindsight: the fill ended
-        // 4dp above the view's bottom edge while starting flush at the top, so
-        // every row's text — centred by the view's own padding — sat visibly low
-        // inside its own card. Losing a couple of dp at the top costs nothing.
-        val vertical = inset + drop * 0.35f
+        val dark = light.elevationDp <= 0f
+        val sw = max(strokeWidthDp * density, 1f)
+        val frameW = sw * 1.25f
+        val drop = if (!dark && !pressed) light.elevationDp * density else 0f
         rect.set(
-            b.left + inset,
-            b.top + vertical,
-            b.right - inset,
-            b.bottom - vertical,
+            b.left + frameW / 2f + drop * 0.5f,
+            b.top + frameW / 2f + drop * 0.2f,
+            b.right - frameW / 2f - drop * 0.5f,
+            b.bottom - frameW / 2f - drop * 0.8f,
         )
-        // A pill radius (999dp in the mock) has to clamp to half the height or
-        // drawRoundRect produces a lens shape on short views.
-        val radius = (radiusDp * density).coerceAtMost(minOf(rect.width(), rect.height()) / 2f)
+        if (rect.width() < 2f || rect.height() < 2f) return
+        val cut = min(radiusDp * density * CUT_RATIO, min(rect.width(), rect.height()) * MAX_CUT_SHARE)
+        chamferPath(shape, rect, cut)
+        val accent = glow?.takeIf { Color.alpha(it) >= 40 }
+        val strong = accent != null
+        val framed = strong || Color.alpha(stroke) > 0
+        val big = rect.height() >= 30f * density && rect.width() >= 60f * density
+        val gold = if (dark) DARK_GOLD else LIGHT_GOLD
 
-        // 0. outer drop shadow — the light palette's ONLY depth cue.
-        //
-        // Drawn first and underneath everything, offset downwards. The shadow is
-        // what separates a white card from a near-white page; without it the
-        // light theme is flat rectangles on flat background. Skipped entirely on
-        // the dark palette (elevationDp = 0), where the bevel does this job.
-        //
-        // Two implementations, because Paint.setShadowLayer() for anything other
-        // than text is only supported by the hardware-accelerated pipeline from
-        // API 28, and minSdk here is 26. On 26/27 it is silently ignored — no
-        // crash, just no shadow — which would ship a flat light theme to
-        // Android 8.x. So below 28 the shadow is stacked by hand from a few
-        // expanding round rects, which every API level can draw.
+        // 0. Outer drop shadow.
         if (drop > 0f) {
-            paint.style = Paint.Style.FILL
-            paint.shader = null
+            resetPaint(Paint.Style.FILL)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 paint.color = fill
-                paint.setShadowLayer(
-                    drop,
-                    0f,
-                    drop * 0.45f,
-                    Sculpt.withAlpha(Color.BLACK, light.elevationAlpha),
-                )
-                canvas.drawRoundRect(rect, radius, radius, paint)
+                paint.setShadowLayer(drop, 0f, drop * 0.35f, Sculpt.withAlpha(SHADOW_TINT, light.elevationAlpha))
+                canvas.drawPath(shape, paint)
                 paint.clearShadowLayer()
             } else {
-                // Three rings, widest and faintest first, each offset down by a
-                // fraction of the blur radius. Alpha is divided across the rings
-                // so the stack lands near elevationAlpha rather than tripling it.
-                val rings = 3
-                for (i in rings downTo 1) {
-                    val spread = drop * (i / rings.toFloat())
-                    paint.color = Sculpt.withAlpha(
-                        Color.BLACK,
-                        light.elevationAlpha * 0.45f / i,
-                    )
-                    shadowRect.set(
-                        rect.left - spread * 0.35f,
-                        rect.top - spread * 0.10f,
-                        rect.right + spread * 0.35f,
-                        rect.bottom + spread * 0.75f,
-                    )
-                    canvas.drawRoundRect(shadowRect, radius + spread * 0.3f, radius + spread * 0.3f, paint)
-                }
+                paint.color = Sculpt.withAlpha(SHADOW_TINT, light.elevationAlpha * 0.6f)
+                canvas.save()
+                canvas.translate(0f, drop * 0.4f)
+                canvas.drawPath(shape, paint)
+                canvas.restore()
             }
         }
 
-        // 1. body gradient
-        paint.style = Paint.Style.FILL
+        // 1. Body.
+        val top = if (pressed) Sculpt.darken(fill, light.bottomDrop * 2.2f) else Sculpt.lighten(fill, light.topLift)
+        val mid = if (pressed) Sculpt.darken(fill, light.bottomDrop * 0.7f) else fill
+        val bottom = if (pressed) fill else Sculpt.darken(fill, light.bottomDrop)
+        resetPaint(Paint.Style.FILL)
         paint.shader = LinearGradient(
             0f, rect.top, 0f, rect.bottom,
-            if (pressed) {
-                intArrayOf(
-                    Sculpt.darken(fill, light.bottomDrop * 2.4f),
-                    Sculpt.darken(fill, light.bottomDrop * 0.7f),
-                    fill,
-                )
-            } else {
-                intArrayOf(
-                    Sculpt.lighten(fill, light.topLift),
-                    fill,
-                    Sculpt.darken(fill, light.bottomDrop),
-                )
-            },
+            intArrayOf(withFillAlpha(top), withFillAlpha(mid), withFillAlpha(bottom)),
             floatArrayOf(0f, 0.55f, 1f),
             Shader.TileMode.CLAMP,
         )
-        canvas.drawRoundRect(rect, radius, radius, paint)
+        canvas.drawPath(shape, paint)
+        paint.shader = null
 
-        // 2. specular highlight, top-left — the "convex glass" cue.
-        // Disabled on light palettes: a white highlight on a white card is
-        // invisible, and turning it dark would read as a smudge, not a highlight.
-        if (!pressed && light.specular > 0f) {
+        // 2. Interior light, clipped to the panel.
+        val saved = canvas.save()
+        canvas.clipPath(shape)
+        if (accent != null) {
+            resetPaint(Paint.Style.FILL)
             paint.shader = RadialGradient(
-                rect.left + rect.width() * 0.30f,
-                rect.top,
-                maxOf(rect.width(), rect.height()) * 0.95f,
-                intArrayOf(
-                    Sculpt.withAlpha(Color.WHITE, light.specular),
-                    Sculpt.withAlpha(Color.WHITE, 0f),
-                ),
-                floatArrayOf(0f, 1f),
+                rect.centerX(), rect.bottom, max(rect.width(), rect.height()) * 0.8f,
+                Sculpt.withAlpha(accent, if (dark) 0.16f else 0.08f),
+                Sculpt.withAlpha(accent, 0f),
                 Shader.TileMode.CLAMP,
             )
-            canvas.drawRoundRect(rect, radius, radius, paint)
+            canvas.drawRect(rect, paint)
+            paint.shader = null
         }
-
-        // 3. inner shadow — bottom when raised, top when pressed
-        val shadowStops = if (pressed) {
-            intArrayOf(
-                Sculpt.withAlpha(Color.BLACK, light.pressedInnerShadow),
-                Sculpt.withAlpha(Color.BLACK, 0f),
+        if (!pressed && light.specular > 0f) {
+            val sheenBottom = rect.top + rect.height() * 0.48f
+            resetPaint(Paint.Style.FILL)
+            paint.shader = LinearGradient(
+                0f, rect.top, 0f, sheenBottom,
+                Sculpt.withAlpha(Color.WHITE, light.specular),
+                Sculpt.withAlpha(Color.WHITE, 0f),
+                Shader.TileMode.CLAMP,
             )
-        } else {
-            intArrayOf(
-                Sculpt.withAlpha(Color.BLACK, 0f),
-                Sculpt.withAlpha(Color.BLACK, light.innerShadow),
-            )
+            canvas.drawRect(rect.left, rect.top, rect.right, sheenBottom, paint)
+            paint.shader = null
         }
-        paint.shader = LinearGradient(
-            0f, rect.top, 0f, rect.bottom,
-            shadowStops,
-            if (pressed) floatArrayOf(0f, 0.45f) else floatArrayOf(0.55f, 1f),
-            Shader.TileMode.CLAMP,
-        )
-        canvas.drawRoundRect(rect, radius, radius, paint)
-        paint.shader = null
-
-        // 4. bevel: a light line on the top edge (dark palette), or a darker
-        // hairline fading downwards (light palette). Same geometry, opposite
-        // colour: on a light surface it is the shadowed edge that reads as an
-        // edge, so bevelColor is black there and the gradient is inverted.
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = strokeWidth
-        val bevelAlpha = if (pressed) light.pressedBevel else light.bevel
-        paint.shader = LinearGradient(
-            0f, rect.top, 0f, rect.bottom,
-            if (light.bevelColor == Color.WHITE) {
-                intArrayOf(
-                    Sculpt.withAlpha(light.bevelColor, bevelAlpha),
-                    Sculpt.withAlpha(light.bevelColor, bevelAlpha * 0.18f),
+        val shadowAlpha = if (pressed) light.pressedInnerShadow else light.innerShadow
+        if (shadowAlpha > 0f) {
+            resetPaint(Paint.Style.FILL)
+            if (pressed) {
+                val edge = rect.top + rect.height() * 0.35f
+                paint.shader = LinearGradient(
+                    0f, rect.top, 0f, edge,
+                    Sculpt.withAlpha(Color.BLACK, shadowAlpha), Sculpt.withAlpha(Color.BLACK, 0f),
+                    Shader.TileMode.CLAMP,
                 )
+                canvas.drawRect(rect.left, rect.top, rect.right, edge, paint)
             } else {
-                intArrayOf(
-                    Sculpt.withAlpha(light.bevelColor, bevelAlpha * 0.18f),
-                    Sculpt.withAlpha(light.bevelColor, bevelAlpha),
+                val edge = rect.bottom - rect.height() * 0.32f
+                paint.shader = LinearGradient(
+                    0f, edge, 0f, rect.bottom,
+                    Sculpt.withAlpha(Color.BLACK, 0f), Sculpt.withAlpha(Color.BLACK, shadowAlpha),
+                    Shader.TileMode.CLAMP,
                 )
-            },
-            floatArrayOf(0f, 1f),
-            Shader.TileMode.CLAMP,
-        )
-        canvas.drawRoundRect(rect, radius, radius, paint)
-        paint.shader = null
+                canvas.drawRect(rect.left, edge, rect.right, rect.bottom, paint)
+            }
+            paint.shader = null
+        }
+        if (accent != null) {
+            val boost = if (pressed) 1.4f else 1f
+            val widths = floatArrayOf(8f, 4.5f, 2.2f)
+            val alphas = floatArrayOf(0.07f, 0.14f, 0.28f)
+            val scale = if (dark) 1f else 0.6f
+            for (i in widths.indices) {
+                resetPaint(Paint.Style.STROKE)
+                paint.strokeJoin = Paint.Join.MITER
+                paint.strokeWidth = sw * widths[i]
+                paint.color = Sculpt.withAlpha(accent, alphas[i] * boost * scale)
+                canvas.drawPath(shape, paint)
+            }
+        }
+        canvas.restoreToCount(saved)
 
-        // outline / lit accent ring
-        paint.color = stroke
-        canvas.drawRoundRect(rect, radius, radius, paint)
+        // 3. Gold frame.
+        if (framed) {
+            val frameAlpha = when {
+                strong -> 1f
+                big -> if (dark) 0.78f else 0.85f
+                else -> if (dark) 0.55f else 0.65f
+            } * (if (pressed) 0.85f else 1f)
+            resetPaint(Paint.Style.STROKE)
+            paint.strokeJoin = Paint.Join.MITER
+            paint.strokeWidth = frameW
+            paint.shader = LinearGradient(
+                rect.left, rect.top, rect.right, rect.bottom,
+                IntArray(gold.size) { Sculpt.withAlpha(gold[it], frameAlpha) },
+                GOLD_POS,
+                Shader.TileMode.CLAMP,
+            )
+            canvas.drawPath(shape, paint)
+            paint.shader = null
+        }
 
-        // a lit control also gets a soft outer bloom, like the mock's box-shadow
-        glow?.let { color ->
-            if (Color.alpha(color) < 40) return@let
-            clip.reset()
-            paint.color = Sculpt.withAlpha(color, 0.22f)
-            paint.strokeWidth = strokeWidth * 2.4f
-            canvas.drawRoundRect(rect, radius, radius, paint)
+        // 4. Inner frame line.
+        if (strong || (big && framed)) {
+            val gap = frameW * 2f
+            inner.set(rect.left + gap, rect.top + gap, rect.right - gap, rect.bottom - gap)
+            if (inner.width() > 4f && inner.height() > 4f) {
+                chamferPath(innerShape, inner, max(cut - gap * 0.41f, 0f))
+                resetPaint(Paint.Style.STROKE)
+                paint.strokeJoin = Paint.Join.MITER
+                paint.strokeWidth = max(sw * 0.7f, 1f)
+                paint.color = if (accent != null) {
+                    Sculpt.withAlpha(accent, if (pressed) 1f else 0.85f)
+                } else {
+                    Sculpt.withAlpha(gold[2], if (dark) 0.55f else 0.40f)
+                }
+                canvas.drawPath(innerShape, paint)
+            }
+        }
+
+        // 5. Gold diamond studs, top and bottom centre, on large panels.
+        if (big && framed) {
+            val s = 3.4f * density
+            drawStud(canvas, rect.centerX(), rect.top, s, gold, accent)
+            drawStud(canvas, rect.centerX(), rect.bottom, s, gold, accent)
         }
     }
+
+    private fun drawStud(canvas: Canvas, x: Float, y: Float, s: Float, gold: IntArray, accent: Int?) {
+        stud.reset()
+        stud.moveTo(x, y - s)
+        stud.lineTo(x + s * 1.5f, y)
+        stud.lineTo(x, y + s)
+        stud.lineTo(x - s * 1.5f, y)
+        stud.close()
+        resetPaint(Paint.Style.FILL)
+        paint.color = gold[1]
+        canvas.drawPath(stud, paint)
+        resetPaint(Paint.Style.STROKE)
+        paint.strokeWidth = max(density * 0.7f, 1f)
+        paint.color = gold[0]
+        canvas.drawPath(stud, paint)
+        resetPaint(Paint.Style.FILL)
+        paint.color = accent ?: gold[0]
+        canvas.drawCircle(x, y, s * 0.38f, paint)
+    }
+
+    private fun resetPaint(style: Paint.Style) {
+        paint.reset()
+        paint.isAntiAlias = true
+        paint.style = style
+    }
+
+    /** Keeps a translucent fill translucent through the body gradient. */
+    private fun withFillAlpha(color: Int): Int =
+        Color.argb(Color.alpha(fill), Color.red(color), Color.green(color), Color.blue(color))
 
     override fun setAlpha(alpha: Int) = Unit
 
@@ -548,15 +485,41 @@ class GlassDrawable(
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 
     override fun getPadding(padding: Rect): Boolean = false
+
+    companion object {
+        /** Corner cut as a share of the caller's corner radius. */
+        private const val CUT_RATIO = 0.62f
+        /** The cut never exceeds this share of the short side. */
+        private const val MAX_CUT_SHARE = 0.30f
+        private val SHADOW_TINT = 0xFF3A2A0A.toInt()
+        private val GOLD_POS = floatArrayOf(0f, 0.28f, 0.52f, 0.78f, 1f)
+        private val DARK_GOLD = intArrayOf(
+            0xFFF6D98B.toInt(), 0xFFD4A64A.toInt(), 0xFF8A6420.toInt(), 0xFFD4A64A.toInt(), 0xFFF6D98B.toInt(),
+        )
+        private val LIGHT_GOLD = intArrayOf(
+            0xFFE6C36F.toInt(), 0xFFB8892F.toInt(), 0xFF7A5718.toInt(), 0xFFB8892F.toInt(), 0xFFE6C36F.toInt(),
+        )
+
+        /** An octagonal panel outline: [r] with each corner cut by [cut]. */
+        fun chamferPath(path: Path, r: RectF, cut: Float) {
+            val c = cut.coerceIn(0f, min(r.width(), r.height()) / 2f)
+            path.reset()
+            path.moveTo(r.left + c, r.top)
+            path.lineTo(r.right - c, r.top)
+            path.lineTo(r.right, r.top + c)
+            path.lineTo(r.right, r.bottom - c)
+            path.lineTo(r.right - c, r.bottom)
+            path.lineTo(r.left + c, r.bottom)
+            path.lineTo(r.left, r.bottom - c)
+            path.lineTo(r.left, r.top + c)
+            path.close()
+        }
+    }
 }
 
 /**
- * Sparkline floor for a metric tile.
- *
- * Two changes over the flat version: each bar is coloured by interpolating
- * between two accents across the row (so a tile reads as a gradient, the way the
- * preview did) and the amplitude also drives brightness, so a quiet tile is dim
- * and a busy one glows.
+ * Traffic bars for a metric tile. Colour walks across the row, quiet bars
+ * stay dim, and every bar carries a bright cap so a busy tile glows.
  */
 class MicroBarsView(
     context: Context,
@@ -568,6 +531,7 @@ class MicroBarsView(
     private val density = resources.displayMetrics.density
     private val samples = ArrayDeque<Float>()
     private val maxBars = 11
+    private val bar = RectF()
 
     fun setColors(primary: Int, secondary: Int = primary) {
         barColor = primary
@@ -600,36 +564,30 @@ class MicroBarsView(
         val slot = (width - gap * (maxBars - 1)) / maxBars
         if (slot <= 0f) return
         val radius = 1.2f * density
+        val cap = 1.6f * density
         samples.forEachIndexed { index, value ->
             // A zero peak means "no traffic yet": draw a 10% stub, never NaN.
             val ratio = if (peak <= 0f) 0.10f else (0.10f + 0.90f * (value / peak))
             val barHeight = height * ratio
             val left = index * (slot + gap)
-            // Colour walks across the row, and quiet bars stay dim.
             val hue = Sculpt.mix(barColor, barColorAlt, index / (maxBars - 1f))
-            val top = Sculpt.withAlpha(hue, 0.35f + 0.60f * ratio)
-            val bottom = Sculpt.withAlpha(hue, 0.06f)
             paint.shader = LinearGradient(
                 0f, height - barHeight, 0f, height.toFloat(),
-                top, bottom,
+                Sculpt.withAlpha(hue, 0.30f + 0.55f * ratio), Sculpt.withAlpha(hue, 0.04f),
                 Shader.TileMode.CLAMP,
             )
-            canvas.drawRoundRect(
-                RectF(left, height - barHeight, left + slot, height.toFloat()),
-                radius, radius, paint,
-            )
+            bar.set(left, height - barHeight, left + slot, height.toFloat())
+            canvas.drawRoundRect(bar, radius, radius, paint)
+            paint.shader = null
+            paint.color = Sculpt.withAlpha(hue, 0.55f + 0.45f * ratio)
+            bar.set(left, height - barHeight, left + slot, height - barHeight + cap)
+            canvas.drawRoundRect(bar, radius, radius, paint)
         }
         paint.shader = null
     }
 }
 
-/**
- * The thin green trace next to the exit-node IP.
- *
- * The preview drew a stroked polyline with a soft fill underneath; the shipped
- * build reused [MicroBarsView], which is why it looked like fat columns. This is
- * that polyline: 1.6dp stroke, rounded joins, gradient fill to transparent.
- */
+/** A glowing trace with a soft fill and a bright head. */
 class SparkLineView(
     context: Context,
     private var lineColor: Int,
@@ -672,26 +630,36 @@ class SparkLineView(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (samples.size < 2 || width <= 0 || height <= 0) return
-        val inset = 2f * density
+        val inset = 3f * density
         val usableH = height - inset * 2
-        val step = width.toFloat() / (samples.size - 1)
+        val step = (width - inset) / (samples.size - 1)
         path.reset()
+        var lastX = 0f
+        var lastY = 0f
         samples.forEachIndexed { index, value ->
             val x = index * step
             val y = inset + usableH * (1f - value)
             if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            lastX = x
+            lastY = y
         }
         fillPath.set(path)
-        fillPath.lineTo(width.toFloat(), height.toFloat())
+        fillPath.lineTo(lastX, height.toFloat())
         fillPath.lineTo(0f, height.toFloat())
         fillPath.close()
         fillPaint.shader = LinearGradient(
             0f, 0f, 0f, height.toFloat(),
-            Sculpt.withAlpha(lineColor, 0.26f), Sculpt.withAlpha(lineColor, 0f),
+            Sculpt.withAlpha(lineColor, 0.30f), Sculpt.withAlpha(lineColor, 0f),
             Shader.TileMode.CLAMP,
         )
         canvas.drawPath(fillPath, fillPaint)
-        stroke.strokeWidth = 1.6f * density
+        fillPaint.shader = null
+        // Glow under the trace.
+        stroke.shader = null
+        stroke.strokeWidth = 4.5f * density
+        stroke.color = Sculpt.withAlpha(lineColor, 0.18f)
+        canvas.drawPath(path, stroke)
+        stroke.strokeWidth = 1.7f * density
         stroke.shader = LinearGradient(
             0f, 0f, width.toFloat(), 0f,
             Sculpt.withAlpha(lineColor, 0.55f), lineColor,
@@ -699,17 +667,15 @@ class SparkLineView(
         )
         canvas.drawPath(path, stroke)
         stroke.shader = null
-        fillPaint.shader = null
+        // Bright head.
+        fillPaint.color = Sculpt.withAlpha(lineColor, 0.28f)
+        canvas.drawCircle(lastX, lastY, 4.8f * density, fillPaint)
+        fillPaint.color = lineColor
+        canvas.drawCircle(lastX, lastY, 2.2f * density, fillPaint)
     }
 }
 
-/**
- * The strip that closes the home screen under LOG / SPLIT / SCAN.
- *
- * That area used to be dead space. It now carries a slow horizon wave in the
- * accent colour plus the build signature. Deliberately cheap: it only animates
- * while attached AND lit, one path of 48 points, ~20fps, no bitmaps, no blur.
- */
+/** The home-screen footer: a gold-to-cyan wave with a caption. */
 class OrbitFooterWave(
     context: Context,
     private val palette: AppAppearance.Palette,
@@ -747,7 +713,7 @@ class OrbitFooterWave(
     }
 
     private fun syncTicker() {
-        val shouldRun = lit && isAttachedToWindow
+        val shouldRun = lit && isAttachedToWindow && windowVisibility == VISIBLE
         if (shouldRun == running) return
         running = shouldRun
         removeCallbacks(ticker)
@@ -756,6 +722,11 @@ class OrbitFooterWave(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        syncTicker()
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
         syncTicker()
     }
 
@@ -768,7 +739,7 @@ class OrbitFooterWave(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (width <= 0 || height <= 0) return
-        val accent = if (lit) palette.connected else palette.faint
+        val accent = if (lit) palette.connected else palette.primary
         val phase = if (lit) (SystemClock.uptimeMillis() % 4_000L) / 4_000f * (2f * Math.PI.toFloat()) else 0f
         val midY = height * 0.42f
         val amplitude = (if (lit) 5.5f else 2.2f) * density
@@ -777,25 +748,31 @@ class OrbitFooterWave(
         for (i in 0..points) {
             val t = i / points.toFloat()
             val x = width * t
-            // Two summed sines: one long swell, one short ripple. Envelope fades
-            // both ends so the trace melts into the background instead of
-            // stopping at a hard edge.
             val envelope = sin(t * Math.PI.toFloat())
             val y = midY + amplitude * envelope *
                 (sin(t * 6.2f + phase) * 0.7f + sin(t * 13f - phase * 1.6f) * 0.3f)
             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
-        wave.strokeWidth = 1.5f * density
-        wave.shader = LinearGradient(
+        val shader = LinearGradient(
             0f, 0f, width.toFloat(), 0f,
             intArrayOf(
-                Sculpt.withAlpha(accent, 0f),
-                Sculpt.withAlpha(accent, if (lit) 0.85f else 0.35f),
-                Sculpt.withAlpha(accent, 0f),
+                Sculpt.withAlpha(palette.primary, 0f),
+                Sculpt.withAlpha(palette.primary, if (lit) 0.55f else 0.30f),
+                Sculpt.withAlpha(accent, if (lit) 0.95f else 0.45f),
+                Sculpt.withAlpha(palette.primary, if (lit) 0.55f else 0.30f),
+                Sculpt.withAlpha(palette.primary, 0f),
             ),
-            floatArrayOf(0f, 0.5f, 1f),
+            floatArrayOf(0f, 0.25f, 0.5f, 0.75f, 1f),
             Shader.TileMode.CLAMP,
         )
+        if (lit) {
+            wave.shader = null
+            wave.strokeWidth = 4.5f * density
+            wave.color = Sculpt.withAlpha(accent, 0.14f)
+            canvas.drawPath(path, wave)
+        }
+        wave.strokeWidth = 1.5f * density
+        wave.shader = shader
         canvas.drawPath(path, wave)
         wave.shader = null
 
