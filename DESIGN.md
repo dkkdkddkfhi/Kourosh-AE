@@ -1,58 +1,93 @@
-# Kourosh-AE Android design contract
+# Kourosh-AE Android design contract (3.0, imperial holo)
 
 ## Intent
 
-Kourosh-AE should feel like a calm, trustworthy dark Android system tool. The home screen is a
-single-purpose connection console: the connection state is visible at a glance, the main
-action is physically obvious, and live connection facts (exit IP, country, data, duration)
-are readable without scrolling.
+Kourosh-AE is a trustworthy Android VPN console dressed as an imperial night
+scene: ornate gold, neon cyan, dark glass. The home screen stays
+single-purpose. The connection state is visible at a glance, the connect dial
+is physically obvious, and live connection facts (exit IP, country, data,
+duration) are readable without scrolling.
 
-This is Kourosh-AE's own visual system. Any third-party app is an interaction reference only;
-do not copy its code, wording, logo, or branding.
+This is Kourosh-AE's own visual system. Any third-party app is an interaction
+reference only; do not copy its code, wording, logo, or branding.
 
 ## Foundations
 
-- **Platform:** native Android views, platform typography, and Android system bars.
-- **Canvas:** `#101411`
-- **Surface:** `#171C18`
-- **Surface variant:** `#222A24`
-- **Ink:** `#E8F1EA`
-- **Muted text:** `#B9C6BB`
-- **Divider:** `#3B473E`
-- **Idle / primary:** `#A4D8BB`
-- **Connected:** `#67D89C`
-- **Connection error:** `#FFB4AB`
-- **Typography:** Roboto / Android system sans. Use a compact hierarchy: app name 22sp,
-  status 20sp, supporting labels 14sp, metadata 12sp.
+- **Platform:** native Android views and Canvas, platform typography, Android
+  system bars. No UI framework migration and no image assets for the look:
+  every frame, emblem, and glow is drawn in code.
+- **Palettes:** exactly two, defined in `AppAppearance.kt`.
+  - `ORBIT` (dark): canvas `#05080D`, surface `#0B121B`, ink `#F3E6C4`,
+    gold `#E3B856` / frame gold `#D4A64A`, cyan `#22D3EE`, violet `#B45CFF`.
+  - `PORCELAIN` (light): canvas `#F3ECDD`, surface `#FFFCF5`, ink `#1A1508`,
+    gold `#B0852B`, teal `#0891B2`, violet `#7C3AED`.
+  - Every accent has a `...Text` sibling that clears 4.5:1 for letters; vivid
+    accents are for shapes only.
+- **Metal:** gold is always a gradient, never a flat fill: highlight
+  `#F6D98B`, body `#D4A64A`, shadow `#8A6420` on dark; `#E6C36F`, `#B8892F`,
+  `#7A5718` on light.
+- **State accents:** idle uses gold, connecting and degraded use amber,
+  connected uses cyan, failure uses danger.
+- **Typography:** system sans for English, Vazirmatn for Persian, Noto Sans SC
+  for Chinese, system mono for digits (see `Typefaces.kt`). Letter-spacing is
+  applied to Latin text only.
+
+## Panels (GlassDrawable)
+
+- Every card, row, chip, and button is a chamfered (cut-corner) panel. The cut
+  follows the caller's corner radius and never exceeds 30% of the short side.
+- Layers: drop shadow (light palette only), body gradient, top sheen, inner
+  shadow, gold gradient frame. An accented panel adds a neon inner glow and an
+  accent inner line. Large panels add a dark-gold inner frame and gold diamond
+  studs at top and bottom centre.
+- Pressing darkens the body, removes the sheen, and brightens the glow.
+
+## The dial (OrbitDialView)
+
+- A gold medallion: crest rays, a metal bezel with engraved ticks and four
+  cardinal studs, a neon ring in the state accent, an inner gold ring, and a
+  dark glass core.
+- Inside the core: a holographic wireframe globe that turns slowly, a
+  code-drawn crown, and the state content.
+  - Idle: power glyph and `TAP TO CONNECT`. Failed: the same in danger with
+    `RETRY`.
+  - Connecting: radar arcs, a comet on the neon ring, and `CONNECTING` or
+    `CONNECTING n%` only when the transport reports real progress.
+  - Connected: `CONNECTED`, the session timer, and the ticks light up.
+  - No check mark or protection claim appears before CONNECTED.
+- Minimum touch target 176dp. The view is measured as ring + bleed so the halo,
+  crest, and ripples are never cropped.
 
 ## Home screen
 
-- Keep the top of the screen quiet: no logo, no wordmark, no decorative cards. The brand
-  lives on the launcher icon and the opening splash, not above the connect button.
-- Put the circular connection control at the visual centre. It is the only large, filled
-  control on the screen and has a minimum 176dp target.
-- Place the selected connection status immediately below the circle.
-- The app is VPN-mode only; there is no mode selector. The protocol picker is the single
-  outlined, full-width control beneath the status, and it is disabled while a tunnel is active.
-- Use real connection wording only: `Not connected`, `Connecting`, `Connected`, and
-  `Connection failed`. Do not claim protection before the core reports it is running.
-- The control uses the primary colour while idle or connecting, brighter green while connected,
-  and red only after a reported connection failure.
+- Put the dial at the visual centre. It is the only large, lit control.
+- Place the selected connection status immediately below the dial.
+- The protocol picker is disabled while a tunnel is active.
+- Use real connection wording only: `Not connected`, `Connecting`,
+  `Connected`, and `Connection failed`. Show real data only: no fake servers,
+  protocols, or statistics.
 
 ## Motion and feedback
 
-- A press scales the circular control to 97% for 90ms, then returns over 180ms with a
-  strong ease-out. State changes redraw the ring and icon rather than moving the layout.
+- A press scales the dial to 96.5% over 110ms, then returns over 190ms.
+- A tap counts only when the finger is released inside the dial. A disabled
+  dial ignores touch and D-pad.
 - Use Android's standard context-click haptic on an intentional connection tap.
-- Keep motion under 300ms and restricted to transform, alpha, and the control's own drawing.
-- Latency keeps its normal graph while probing. After each returned `N ms`, lift and settle the
-  graph over 280ms without moving surrounding content.
-- Respect Android accessibility: every interactive element has a clear content description;
-  colour never carries state alone.
+- The dial loop runs at 8s when idle or connected and 1.15s while connecting,
+  switches tempo with the state, is capped at about 30fps, and stops while the
+  window is hidden or the view is detached.
+- Respect accessibility: every interactive element has a content description,
+  colour never carries state alone, and D-pad focus shows a visible ring.
+
+## Notification and tile icon
+
+- `ic_kourosh_notification`: a 24dp white shield with a "K" cut out
+  (even-odd fill). Monochrome silhouette only, as Android requires.
 
 ## Guardrails
 
 - No copied third-party assets, names, code, screenshots, or branding.
-- No gradients, neon, oversized text, fake statistics, or nested-card dashboards.
-- No extra UI libraries for this first screen. Add Jetpack Compose or Material dependencies
-  only when the app grows enough screens to justify that migration.
+- No heavy UI or 3D libraries. The arm64 APK must stay under Telegram's 50 MB
+  document cap.
+- The dial must never be the reason the app drains battery: no redraws while
+  hidden.

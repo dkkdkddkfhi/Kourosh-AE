@@ -5,39 +5,21 @@ import android.graphics.Color
 import com.kourosh.ae.profiled
 
 /**
- * The Orbit palettes — one dark, one light, chosen by the user.
+ * The Kourosh-AE 3.0 "imperial holo" palettes: one dark, one light, chosen by
+ * the user. Nothing here is derived from the wallpaper.
  *
- * History matters here. The colour picker used to offer five palettes plus a
- * "Dynamic" mode that inherited the phone's Material colours, and that was
- * removed on purpose: the approved design is a specific look, and letting the OS
- * repaint it produced washed-out greys and light surfaces the layout was never
- * designed for.
+ *   - [ORBIT]     : night navy canvas, ornate gold frames, neon cyan state.
+ *   - [PORCELAIN] : ivory canvas, deep gold frames, teal state.
  *
- * This is not that. There are exactly two palettes, both drawn from an approved
- * mock, and nothing about them is derived from the phone's wallpaper:
- *   - [ORBIT]     — the original dark glass + neon console.
- *   - [PORCELAIN] — a light palette: grey canvas, white raised cards.
+ * Gold is the brand and frame colour ([primary], [neonBlue]). Cyan is the
+ * "tunnel is up" colour ([connected], [mint]). Violet is upload.
  *
- * ## Why a light palette is more than swapping ink for canvas
+ * Every accent has a `...Text` sibling that clears 4.5:1 for letters on the
+ * palette's cards and page. On [ORBIT] the vivid accents already clear it; on
+ * [PORCELAIN] the text siblings are darkened. Vivid accents are for shapes.
  *
- * The dark look builds depth out of a white specular highlight on the top edge
- * of every surface. On a white card that highlight is invisible, so a naive
- * inversion produces flat white rectangles floating on flat white. Depth on
- * light has to come from the opposite direction: a shadow below the surface, and
- * a card that is *lighter* than the page rather than darker.
- *
- * That inversion lives in [Sculpt.Lighting], carried on the palette, so every
- * surface in the app changes lighting model together instead of each call site
- * guessing. [load] installs it before any drawing happens.
- *
- * ## Text vs graphics accents
- *
- * `#4FE3C1` mint reads at 11:1 on the dark card and 3.4:1 on white — fine for a
- * dial arc, below the 4.5:1 floor for the letters of a label. So every accent
- * has a `…Text` sibling. On [ORBIT] the two are the same colour; on [PORCELAIN]
- * the text sibling is darkened until it clears 4.5:1 on both the card and the
- * canvas. Shapes keep the vivid colour, which is what makes the light theme
- * still look like Kourosh-AE instead of a generic white app.
+ * Depth is carried by [Sculpt.Lighting] on the palette, so every surface in the
+ * app changes lighting model together. [load] installs it before any drawing.
  */
 object AppAppearance {
 
@@ -58,58 +40,38 @@ object AppAppearance {
     const val PREF_KEY = "theme_mode"
 
     data class Palette(
-        /** page background — mock `--void` */
+        /** page background */
         val canvas: Int,
         /** raised card fill */
         val surface: Int,
         /** recessed / secondary card fill */
         val surfaceVariant: Int,
-        /** primary text — mock `--ink` */
+        /** primary text */
         val ink: Int,
-        /** secondary text — mock `--dim` */
+        /** secondary text */
         val muted: Int,
-        /** hairline borders — mock `--line` */
+        /** hairline borders */
         val divider: Int,
-        /** the brand accent — mock `--mint` */
+        /** the brand accent: imperial gold */
         val primary: Int,
-        /**
-         * Text and glyphs drawn on top of a surface filled with [primary] — the
-         * Save/Done/Reset buttons.
-         *
-         * Dark on both palettes, which is not an accident: [primary] is a mid-to-
-         * bright teal in both, so a light label on it never reaches 4.5:1 while a
-         * dark one clears it comfortably.
-         */
+        /** text and glyphs drawn on a surface filled with [primary] */
         val primaryContainer: Int,
-        /**
-         * Background of a row that is currently selected — a protocol option, a
-         * split-tunnel app, a picker entry.
-         *
-         * Split out from [primaryContainer] because the dark palette could use one
-         * value for both and the light palette cannot. Dark: `#04070B`, the canvas,
-         * so a selected row reads as a recess with a mint border. Light: a pale
-         * mint wash, because filling a selected row with near-black ink on a white
-         * page would hide the ink-coloured label sitting on it.
-         */
+        /** background of a selected row */
         val selectedSurface: Int,
-        /** the "tunnel is up" accent — mock `--neon` */
+        /** the "tunnel is up" accent: neon cyan */
         val connected: Int,
         val connectedContainer: Int,
-        /** tertiary text — mock `--faint` */
+        /** tertiary text */
         val faint: Int,
-        /** download accent — mock `--mint` */
+        /** download accent */
         val mint: Int,
-        /** upload accent — mock `--violet` */
+        /** upload accent */
         val violet: Int,
-        /** in-progress / speed accent — mock `--amber` */
+        /** in-progress / speed accent */
         val amber: Int,
-        /** failure accent — mock `--danger` */
+        /** failure accent */
         val danger: Int,
-        /**
-         * Accents again, dark enough to be *read as letters* on this palette's
-         * surfaces. Identical to the vivid values on a dark palette, where the
-         * vivid values already clear 4.5:1.
-         */
+        /** Accents dark enough to be read as letters on this palette. */
         val primaryText: Int = primary,
         val connectedText: Int = connected,
         val mintText: Int = mint,
@@ -119,12 +81,8 @@ object AppAppearance {
         /** Failure text on the connection headline. */
         val error: Int = danger,
         /**
-         * Fixed neon frame accents. These are *shape* colours only — the borders
-         * of the home-screen cards — and are painted regardless of connection
-         * state, so they must look right on the canvas in both themes. They are
-         * deliberately NOT part of the connected/mint family: the user asked for
-         * the frames to stay lit after connect, and reusing `connected` would
-         * have made them go dark the moment the tunnel came up.
+         * Fixed frame accents for the home-screen cards. Shape colours only,
+         * painted regardless of connection state.
          */
         val neonBlue: Int,
         val neonViolet: Int,
@@ -132,96 +90,60 @@ object AppAppearance {
         val lighting: Sculpt.Lighting = Sculpt.DARK_LIGHTING,
     )
 
+    /** Night scene: navy-black page, ornate gold, neon cyan. */
     val ORBIT = Palette(
-        canvas = 0xFF050505.toInt(),
-        surface = 0xFF0B0A08.toInt(),
-        surfaceVariant = 0xFF12100C.toInt(),
+        canvas = 0xFF05080D.toInt(),
+        surface = 0xFF0B121B.toInt(),
+        surfaceVariant = 0xFF101A26.toInt(),
         ink = 0xFFF3E6C4.toInt(),
-        muted = 0xFFA89870.toInt(),
-        divider = 0xFF5B4522.toInt(),
-        primary = 0xFFF6D98B.toInt(),
-        primaryContainer = 0xFF0B0A08.toInt(),
-        selectedSurface = 0xFF17150E.toInt(),
-        connected = 0xFF22D3C5.toInt(),
+        muted = 0xFFB9AC86.toInt(),
+        divider = 0xFF3A2F18.toInt(),
+        primary = 0xFFE3B856.toInt(),
+        primaryContainer = 0xFF120D03.toInt(),
+        selectedSurface = 0xFF0D1C28.toInt(),
+        connected = 0xFF22D3EE.toInt(),
         connectedContainer = 0xFF06303A.toInt(),
-        faint = 0xFF786B4F.toInt(),
-        mint = 0xFFD4A64A.toInt(),
-        violet = 0xFF8A6420.toInt(),
-        amber = 0xFFF6D98B.toInt(),
-        danger = 0xFFB3372F.toInt(),
-        // On the dark canvas the vivid accents already read as text (10-11:1),
-        // so no separate text ramp — except the failure headline, which the app
-        // has always drawn in a softer red than the dial's danger ring.
-        error = 0xFFF2A39B.toInt(),
-        // Neon frame accents: bright enough to read as a lit outline on the
-        // near-black canvas, dimmer than a text colour would need to be.
-        neonBlue = 0xFFF6D98B.toInt(),
-        neonViolet = 0xFF8A6420.toInt(),
+        faint = 0xFF8C8263.toInt(),
+        mint = 0xFF22D3EE.toInt(),
+        violet = 0xFFB45CFF.toInt(),
+        amber = 0xFFF5C451.toInt(),
+        danger = 0xFFFF5A5F.toInt(),
+        error = 0xFFFF9A94.toInt(),
+        neonBlue = 0xFFD4A64A.toInt(),
+        neonViolet = 0xFF22D3EE.toInt(),
         lighting = Sculpt.DARK_LIGHTING,
     )
 
     /**
-     * Porcelain: `#EEF1F4` page, `#FFFFFF` cards.
-     *
-     * The page is deliberately NOT white. A white page with white cards has
-     * nothing to separate them but a hairline, and the layout leans on card
-     * shapes to group things. Grey page + white card gives the cards their own
-     * luminance step, and the shadow from [Sculpt.Lighting.elevationDp] does the
-     * rest.
-     *
-     * Every text value below was measured against all three backgrounds a label
-     * can land on — `#FFFFFF` (card), `#EEF1F4` (page), `#E4F3EF` (selected row) —
-     * and the worst of the three is what is quoted. All clear the 4.5:1 body-text
-     * floor:
-     *   ink 15.4 · muted 5.7 · faint 4.5 · primaryText 5.3 · mintText 5.3
-     *   connectedText 5.2 · violetText 6.2 · amberText 6.4 · dangerText 5.7
-     *
-     * The vivid accents are 3.0-4.5:1 and are used for shapes only — the dial arc,
-     * the sparkline, a pill fill, a border. Never for letters.
+     * Daylight: ivory page, warm white cards, deep gold frames, teal state.
+     * Text values clear 4.5:1 on the card, the page and a selected row.
      */
     val PORCELAIN = Palette(
-        canvas = 0xFFEEF1F4.toInt(),
-        surface = 0xFFFFFFFF.toInt(),
-        // A shade off the card, not equal to it: `surfaceVariant` is the fill of
-        // an *unselected* chip or recessed row, and those sit on white cards. Equal
-        // values would leave only the hairline border to show a chip is there.
-        surfaceVariant = 0xFFF4F7F9.toInt(),
-        ink = 0xFF111A1F.toInt(),
-        muted = 0xFF4E6069.toInt(),
-        divider = 0xFFE0E6EA.toInt(),
-        primary = 0xFF0E9C82.toInt(),
-        // Text on top of a filled primary surface: the Reset button's label, a lit
-        // pill. Ink, not white — white on #0E9C82 is 3.4:1, and this is a 15sp
-        // button label. Ink on the same fill is 5.1:1. That matches how the dark
-        // palette already does it (near-black canvas on bright mint), so the two
-        // themes stay consistent rather than one inverting.
-        primaryContainer = 0xFF111A1F.toInt(),
-        // Pale mint, 1.09:1 against the card — deliberately faint. The border is
-        // `primary` and the label goes bold, so selection is carried by three cues
-        // at once rather than by a strong fill that would fight the white page.
-        selectedSurface = 0xFFE4F3EF.toInt(),
-        connected = 0xFF17A05E.toInt(),
-        connectedContainer = 0xFFDDF3E6.toInt(),
-        // #5B6D75, not the mock's #8496A0. The preview used `faint` for hints that
-        // sit on a card, and 8496A0 measures 2.6:1 there — under the floor for text
-        // of any size. 5B6D75 keeps the tertiary *role* (still clearly behind
-        // `muted`) while clearing 4.5:1 on the card, the page AND a selected row.
-        faint = 0xFF5B6D75.toInt(),
-        mint = 0xFF0E9C82.toInt(),
-        violet = 0xFF6B5BD6.toInt(),
-        amber = 0xFFA96A08.toInt(),
-        danger = 0xFFE04257.toInt(),
-        primaryText = 0xFF087060.toInt(),
-        connectedText = 0xFF0A7340.toInt(),
-        mintText = 0xFF087060.toInt(),
-        violetText = 0xFF5347B8.toInt(),
-        amberText = 0xFF7D4B00.toInt(),
-        dangerText = 0xFFB3261E.toInt(),
-        error = 0xFFB3261E.toInt(),
-        // Neon frame accents on a light page: saturated enough to still read as
-        // a deliberate accent rather than a hairline, dark enough not to glare.
-        neonBlue = 0xFF0E86C7.toInt(),
-        neonViolet = 0xFF7C4DFF.toInt(),
+        canvas = 0xFFF3ECDD.toInt(),
+        surface = 0xFFFFFCF5.toInt(),
+        surfaceVariant = 0xFFF7EFDF.toInt(),
+        ink = 0xFF1A1508.toInt(),
+        muted = 0xFF5B4F35.toInt(),
+        divider = 0xFFE2D3AE.toInt(),
+        primary = 0xFFB0852B.toInt(),
+        primaryContainer = 0xFF1A1508.toInt(),
+        selectedSurface = 0xFFF5E7C4.toInt(),
+        connected = 0xFF0891B2.toInt(),
+        connectedContainer = 0xFFDDF2F7.toInt(),
+        faint = 0xFF675B40.toInt(),
+        mint = 0xFF0891B2.toInt(),
+        violet = 0xFF7C3AED.toInt(),
+        amber = 0xFFB7791F.toInt(),
+        danger = 0xFFDC2626.toInt(),
+        primaryText = 0xFF76560F.toInt(),
+        connectedText = 0xFF0B6A82.toInt(),
+        mintText = 0xFF0B6A82.toInt(),
+        violetText = 0xFF6D28D9.toInt(),
+        amberText = 0xFF7A4803.toInt(),
+        dangerText = 0xFFB91C1C.toInt(),
+        error = 0xFFB91C1C.toInt(),
+        neonBlue = 0xFFB0852B.toInt(),
+        neonViolet = 0xFF0891B2.toInt(),
         lighting = Sculpt.LIGHT_LIGHTING,
     )
 
@@ -244,12 +166,6 @@ object AppAppearance {
 
     /**
      * The palette for this session, and the only place [Sculpt.lighting] is set.
-     *
-     * Sculpt's drawing helpers are called from ~26 sites that do not hold a
-     * palette (a settings row knows its own colours, not the app's lighting
-     * model). Installing the lighting here means every one of those calls is
-     * correct by construction, because nothing in the app can obtain a palette
-     * without going through this function first.
      */
     fun load(context: Context): Palette = palette(mode(context)).also {
         Sculpt.lighting = it.lighting
