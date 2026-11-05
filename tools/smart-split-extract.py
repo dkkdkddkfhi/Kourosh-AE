@@ -16,7 +16,11 @@ SUB_URL = ("https://raw.githubusercontent.com/patterniha/Serverless-for-Iran/"
 
 # Only the config(s) verified working in the field (محسن, 2026-09-12).
 # fragA probes dead on his carrier; until it is fixed upstream it is excluded.
-WORKING_PROFILES = {"Serverless-v50-fragB"}
+# 2026-09-24: upstream renamed v50 -> v51 and the pinned name matched nothing,
+# which failed the sync with "no profiles survived the working-profile filter".
+# v51-fragB's masks are byte-identical to the verified v50-fragB pair, so the
+# field verdict carries over; v51-fragA is a different profile and stays out.
+WORKING_PROFILES = {"Serverless-v51-fragB"}
 
 def extract(body_text):
     src = json.loads(body_text)

@@ -107,8 +107,9 @@ object AppAppearance {
         val danger: Int,
         /**
          * Accents again, dark enough to be *read as letters* on this palette's
-         * surfaces. Identical to the vivid values on a dark palette, where the
-         * vivid values already clear 4.5:1.
+         * surfaces. Mostly identical to the vivid values on a dark palette —
+         * except ORBIT's violet and danger (see below), whose deep royal values
+         * fail as letters and take lighter siblings.
          */
         val primaryText: Int = primary,
         val connectedText: Int = connected,
@@ -144,14 +145,24 @@ object AppAppearance {
         selectedSurface = 0xFF17150E.toInt(),
         connected = 0xFF22D3C5.toInt(),
         connectedContainer = 0xFF06303A.toInt(),
-        faint = 0xFF786B4F.toInt(),
+        // #8F8060, not the mock's #786B4F: the mock's tertiary grey measured
+        // 3.78:1 on the card — under the floor for the rail labels and tile
+        // units that wear it. This keeps the tertiary *role* (still clearly
+        // behind `muted` at 6.96) while clearing 4.5:1.
+        faint = 0xFF8F8060.toInt(),
         mint = 0xFFD4A64A.toInt(),
         violet = 0xFF8A6420.toInt(),
         amber = 0xFFF6D98B.toInt(),
         danger = 0xFFB3372F.toInt(),
-        // On the dark canvas the vivid accents already read as text (10-11:1),
-        // so no separate text ramp — except the failure headline, which the app
-        // has always drawn in a softer red than the dial's danger ring.
+        // Two text siblings DO differ on the dark canvas, because their vivid
+        // values sit under the 4.5:1 floor as letters: violet #8A6420 reads
+        // 3.70:1 (the UPLOAD caption, the chain badges) and danger #B3372F reads
+        // 3.30:1 (the failure pill, the dial's FAILED caption, destructive
+        // rows). Shapes keep the deep values — a dial ring only needs 3:1 —
+        // while letters take light bronze and the same soft red the failure
+        // headline has always used.
+        violetText = 0xFFD9B45C.toInt(),
+        dangerText = 0xFFF2A39B.toInt(),
         error = 0xFFF2A39B.toInt(),
         // Neon frame accents: bright enough to read as a lit outline on the
         // near-black canvas, dimmer than a text colour would need to be.

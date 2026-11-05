@@ -846,10 +846,15 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
         /**
          * Accent used for the notification's icon tint and header text.
          *
-         * Sampled from the launcher artwork's neon ring (#70E0B0 region), so the
-         * shade row and the app icon read as the same brand.
+         * Royal gold — the app's own primary — so the shade row, the status-bar
+         * crest and the in-app console read as one brand. It used to be sampled
+         * from the launcher artwork's neon ring (#70E0B0), back when the artwork
+         * was teal; the crest went gold and the tint follows it.
+         *
+         * Visible to [UpdateNotificationWorker], so the update row wears the same
+         * gold instead of each row inventing its own.
          */
-        private const val NOTIFICATION_ACCENT = 0xFF70E0B0.toInt()
+        const val NOTIFICATION_ACCENT = 0xFFF6D98B.toInt()
 
         /** Preference key for the auto-reconnect toggle. */
         const val AUTO_RECONNECT_PREF = "auto_reconnect"
@@ -4387,6 +4392,9 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
 
     private fun stopTunnel(notify: Boolean = true, teardownService: Boolean = true) {
         stopRequested.set(true)
+        // Whatever was starting is over: a teardown that sends no broadcast
+        // (notify = false) would otherwise leave isConnecting stuck true.
+        TunnelStatus.isConnecting = false
         // The watchdog must go first: it is what turns a teardown into a
         // reconnect, and leaving it armed while we dismantle the data path would
         // make it fire on the wreckage of a session that is deliberately ending.
@@ -4610,6 +4618,13 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
             }
             STATUS_DISCONNECTED, STATUS_FAILED -> connectedSince = 0L
         }
+        // The flag the Quick Settings tile cancels a mid-handshake tap with.
+        // Set here because every status line funnels through sendStatus: true
+        // exactly while the UI should read "connecting", false on every
+        // terminal state. stopTunnel() also clears it for the teardowns that
+        // send no broadcast (notify = false), so the flag can never stick.
+        TunnelStatus.isConnecting =
+            status == STATUS_CONNECTING || status == STATUS_STARTING || status == STATUS_SCANNING
         // Keep the last known figure across the many CONNECTING broadcasts that
         // carry no progress of their own, so a "Starting Tor…" message arriving
         // after "40%" does not visibly reset the percentage to nothing.
@@ -5282,11 +5297,17 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
     }
 
     /**
-     * The ongoing status notification.
+     * The ongoing status notification: one fact per slot, nothing twice.
      *
-     * Takes no traffic figures: byte counters and speeds were removed from the
-     * text (see [updateTrafficNotification]), which is what allows the row to be
-     * posted only on real state changes instead of every few seconds.
+     * Title names the state ("VPN connected", or the SOCKS port in proxy mode).
+     * The sub-header names the carrier (protocol • country). The collapsed line
+     * carries the live rates, and expanding adds the session totals. Duration is
+     * NOT in the text — the chronometer owns it (see below), and printing it as
+     * well used to show two clocks disagreeing by a repost.
+     *
+     * Reposted at most every 5 s while connected (see
+     * [updateTrafficNotification]): often enough that the rates feel live, rare
+     * enough that MIUI/EMUI never treat it as a buzzing row.
      */
     private fun notification(): Notification {
         val intent = Intent(this, MainActivity::class.java).apply {
@@ -5337,24 +5358,21 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
         // and a user who reads that and then finds Chrome on their real IP would be
         // right to call it a lie. The port is in the title because it is the one
         // thing they need and the only place they can see it while the app is closed.
-        val duration = if (connectedSince > 0L) {
-            formatDuration(SystemClock.elapsedRealtime() - connectedSince)
-        } else {
-            "00:00:00"
-        }
         val sessionUsage = "↓ ${formatBytes(currentRx)}  ↑ ${formatBytes(currentTx)}"
         val liveSpeed = "↓ ${formatRate(currentSpeedRx)}/s  ↑ ${formatRate(currentSpeedTx)}/s"
+        // Title is the state alone: the session totals used to hang off it and
+        // pushed "VPN connected" itself into an ellipsis on narrow screens.
         val title = if (proxyMode) {
-            "${Strings.tf("SOCKS proxy on %s", CoreConfig.proxyListenPort(this))} • $sessionUsage"
+            Strings.tf("SOCKS proxy on %s", CoreConfig.proxyListenPort(this))
         } else {
-            "${Strings.t("VPN connected")} • $sessionUsage"
+            Strings.t("VPN connected")
         }
-        val liveSubtitle = "$subtitle • $liveSpeed • $duration"
 
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
-            .setContentText(liveSubtitle)
-            .setStyle(Notification.BigTextStyle().bigText(liveSubtitle))
+            .setSubText(subtitle)
+            .setContentText(liveSpeed)
+            .setStyle(Notification.BigTextStyle().bigText("$liveSpeed\n$sessionUsage"))
             .setSmallIcon(R.drawable.ic_kourosh_notification)
             .setLargeIcon(appBadge())
             // Tints the small icon and the header text in the app's own accent,
@@ -5368,8 +5386,11 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
             // content — the exact case the user is complaining about.
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, Strings.t("Disconnect"), disconnectPendingIntent)
-            .addAction(android.R.drawable.ic_menu_revert, Strings.t("Reconnect"), reconnectPendingIntent)
+            // App icons, not the stock Android glyphs: the old pair (a grey X and
+            // a curved arrow from android.R) belonged to no design language in
+            // this app.
+            .addAction(R.drawable.ic_notif_disconnect, Strings.t("Disconnect"), disconnectPendingIntent)
+            .addAction(R.drawable.ic_refresh, Strings.t("Reconnect"), reconnectPendingIntent)
 
         // The session timer, ticked by the system rather than by us.
         //
@@ -5406,14 +5427,6 @@ class KouroshAeVpnService : VpnService(), NativeCore.CoreCallback, PsiphonTunnel
     }
 
     private fun formatRate(bytesPerSecond: Long): String = formatBytes(bytesPerSecond)
-
-    private fun formatDuration(elapsedMs: Long): String {
-        val totalSeconds = (elapsedMs.coerceAtLeast(0L) / 1000L)
-        val hours = totalSeconds / 3600L
-        val minutes = (totalSeconds % 3600L) / 60L
-        val seconds = totalSeconds % 60L
-        return String.format(java.util.Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
-    }
 
     /**
      * Human-readable transport name for the notification.

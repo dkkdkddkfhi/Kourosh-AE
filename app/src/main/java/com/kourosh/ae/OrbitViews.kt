@@ -48,12 +48,18 @@ private fun Context.orbitLabel(
 }
 
 /**
- * One at-a-glance counter with a sparkline floor.
+ * One at-a-glance counter with a waveform floor.
  *
- * Each tile owns its own accent — mint for DOWN, violet for UP, amber for SPEED,
- * exactly as the approved mock. All three used to share `palette.primary`, which
- * is why every bar row looked identical and flat. The caption takes the accent
- * too, and the bars fade from the accent to a neighbouring hue across the row.
+ * Each tile owns its own accent — mint for DOWNLOAD, violet for UPLOAD, amber
+ * for SPEED, exactly as the approved mock. All three used to share
+ * `palette.primary`, which is why every tile looked identical and flat. The
+ * caption takes the accent too, and the floor is a [SparkLineView] in the same
+ * accent — the trace the exit-node card uses — so the tiles and the exit card
+ * read as one instrument panel instead of two drawing styles.
+ *
+ * [accentSecondary] is reserved: the wave is single-hue, but the three call
+ * sites pass the accent pair positionally and the parameter keeps them
+ * compiling while documenting the tile's gradient neighbour.
  */
 class MetricTile(
     context: Context,
@@ -74,7 +80,7 @@ class MetricTile(
     private val row: LinearLayout
     private val valueView: TextView
     private val unitView: TextView
-    private val bars: MicroBarsView
+    private val wave: SparkLineView
 
     init {
         orientation = VERTICAL
@@ -111,8 +117,8 @@ class MetricTile(
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = context.px(1) })
 
-        bars = MicroBarsView(context, accent, accentSecondary).apply { seed() }
-        addView(bars, LayoutParams(
+        wave = SparkLineView(context, accent).apply { seed() }
+        addView(wave, LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             context.px(16),
         ).apply { topMargin = context.px(5); bottomMargin = context.px(9) })
@@ -166,9 +172,9 @@ class MetricTile(
         }
     }
 
-    fun push(sample: Float) = bars.push(sample)
+    fun push(sample: Float) = wave.push(sample)
 
-    fun resetBars() = bars.reset()
+    fun resetWave() = wave.reset()
 
     fun dim(active: Boolean) {
         alpha = if (active) 1f else 0.55f

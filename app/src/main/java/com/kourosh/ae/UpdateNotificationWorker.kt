@@ -70,7 +70,8 @@ class UpdateNotificationWorker(
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
-            .setColor(0xFFD4A64A.toInt())
+            // Same royal gold as the VPN row — one brand across both notifications.
+            .setColor(KouroshAeVpnService.NOTIFICATION_ACCENT)
             .build()
         NotificationManagerCompat.from(applicationContext).notify(NOTIFICATION_ID, notification)
         prefs.edit().putString(KEY_NOTIFIED_VERSION, release.version).apply()
